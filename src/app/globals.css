@@ -1,0 +1,120 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-jakarta), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  
+  --color-royal: #2F5BFF;
+  --color-royal-light: #4D74FF;
+  --color-royal-dark: #1944E6;
+  --color-navy: #0B1F4D;
+  --color-navy-dark: #071536;
+  --color-navy-light: #162E6E;
+}
+
+@layer base {
+  :root {
+    --background: 216 38% 97%; /* #F7F9FC */
+    --foreground: 222 47% 11%; /* #0F172A */
+
+    --card: 0 0% 100%; /* #FFFFFF */
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    /* Corporate Navy */
+    --navy: 221 75% 17%; /* #0B1F4D */
+    --navy-foreground: 210 40% 98%;
+
+    /* Energetic Royal Blue & Vibrant Blue */
+    --primary: 227 100% 59%; /* #2F5BFF */
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 214 32% 91%;
+    --secondary-foreground: 222 47% 11%;
+
+    --muted: 215 20% 65%;
+    --muted-foreground: 215 16% 47%;
+
+    --accent: 38 92% 50%; /* #F59E0B */
+    --accent-foreground: 222 47% 11%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 220 30% 92%; /* #E3E8F2 */
+    --input: 220 30% 92%;
+    --ring: 227 100% 59%;
+
+    --radius: 0.85rem;
+  }
+}
+
+body {
+  background-color: #f7f9fc;
+  color: #0f172a;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  min-height: 100vh;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Marquee continuous animation */
+@keyframes marquee-left {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes marquee-right {
+  0% {
+    transform: translateX(-50%);
+  }
+  100% {
+    transform: translateX(0%);
+  }
+}
+
+.animate-marquee-left {
+  display: flex;
+  width: max-content;
+  animation: marquee-left 55s linear infinite;
+}
+
+.animate-marquee-right {
+  display: flex;
+  width: max-content;
+  animation: marquee-right 60s linear infinite;
+}
+
+.animate-marquee-left:hover,
+.animate-marquee-right:hover {
+  animation-play-state: paused;
+}
+
+/* Blinking cursor for typewriter effect */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.animate-cursor-blink {
+  animation: blink 0.9s infinite;
+}
