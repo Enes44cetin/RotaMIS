@@ -365,7 +365,7 @@ export function ResourcesManager({ resources, availableSkills }: ResourcesManage
             <div className="font-semibold text-slate-700 text-xs">
               {typeLabels[item.resource_type] || item.resource_type}
             </div>
-            <span className={`inline-block px-2 py-0.2 rounded-md text-[10px] font-bold border ${pr.style}`}>
+            <span className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-bold border ${pr.style}`}>
               {pr.label}
             </span>
           </div>
@@ -476,7 +476,7 @@ export function ResourcesManager({ resources, availableSkills }: ResourcesManage
             >
               <span>{tab.label}</span>
               <span
-                className={`text-[10px] px-1.5 py-0.2 rounded-md ${
+                className={`text-[10px] px-1.5 py-0.5 rounded-md ${
                   filterStatus === tab.key ? "bg-white/20 text-white" : "bg-slate-100 text-slate-500"
                 }`}
               >

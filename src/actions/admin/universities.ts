@@ -4,7 +4,12 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { universitySchema, type UniversityFormData } from "@/lib/validation/admin-schemas";
+import {
+  universitySchema,
+  mergeUniversitySchema,
+  uuidSchema,
+  type UniversityFormData,
+} from "@/lib/validation/admin-schemas";
 import { logAdminAction } from "@/lib/admin/audit";
 
 export async function createUniversityAction(data: UniversityFormData) {
@@ -52,6 +57,7 @@ export async function createUniversityAction(data: UniversityFormData) {
 export async function updateUniversityAction(id: string, data: UniversityFormData) {
   try {
     const session = await requireAdmin();
+    const validId = uuidSchema.parse(id);
     const validated = universitySchema.parse(data);
 
     const supabase = await createClient();
@@ -64,14 +70,14 @@ export async function updateUniversityAction(id: string, data: UniversityFormDat
         sort_order: validated.sort_order,
         is_active: validated.is_active,
       })
-      .eq("id", id);
+      .eq("id", validId);
 
     if (error) return { success: false, error: error.message };
 
     await logAdminAction({
       action: "update_university",
       entityType: "university",
-      entityId: id,
+      entityId: validId,
       details: { name: validated.name },
       adminId: session.user.id,
     });
@@ -87,19 +93,20 @@ export async function updateUniversityAction(id: string, data: UniversityFormDat
 export async function toggleActiveUniversityAction(id: string, is_active: boolean) {
   try {
     const session = await requireAdmin();
+    const validId = uuidSchema.parse(id);
     const supabase = await createClient();
 
     const { error } = await supabase
       .from("universities")
-      .update({ is_active })
-      .eq("id", id);
+      .update({ is_active: Boolean(is_active) })
+      .eq("id", validId);
 
     if (error) return { success: false, error: error.message };
 
     await logAdminAction({
       action: is_active ? "activate_university" : "archive_university",
       entityType: "university",
-      entityId: id,
+      entityId: validId,
       adminId: session.user.id,
     });
 
@@ -114,13 +121,14 @@ export async function toggleActiveUniversityAction(id: string, is_active: boolea
 export async function deleteUniversityAction(id: string) {
   try {
     const session = await requireAdmin();
+    const validId = uuidSchema.parse(id);
     const supabase = await createClient();
 
     // Check student count
     const { count } = await supabase
       .from("profiles")
       .select("*", { count: "exact", head: true })
-      .eq("university_id", id);
+      .eq("university_id", validId);
 
     if (count && count > 0) {
       return {
@@ -129,13 +137,13 @@ export async function deleteUniversityAction(id: string) {
       };
     }
 
-    const { error } = await supabase.from("universities").delete().eq("id", id);
+    const { error } = await supabase.from("universities").delete().eq("id", validId);
     if (error) return { success: false, error: error.message };
 
     await logAdminAction({
       action: "delete_university",
       entityType: "university",
-      entityId: id,
+      entityId: validId,
       adminId: session.user.id,
     });
 
@@ -161,12 +169,13 @@ export async function mergeUnlistedUniversityAction(params: {
 }) {
   try {
     const session = await requireAdmin();
+    const validated = mergeUniversitySchema.parse(params);
     const adminClient = createAdminClient();
 
-    let finalUniversityId = params.targetUniversityId;
+    let finalUniversityId = validated.targetUniversityId;
 
-    if (params.action === "create_new") {
-      if (!params.newUniversityName?.trim()) {
+    if (validated.action === "create_new") {
+      if (!validated.newUniversityName?.trim()) {
         return { success: false, error: "Yeni üniversite adı boş bırakılamaz." };
       }
 
@@ -174,8 +183,8 @@ export async function mergeUnlistedUniversityAction(params: {
       const { data: newUni, error: createErr } = await adminClient
         .from("universities")
         .insert({
-          name: params.newUniversityName.trim(),
-          city: params.city?.trim() || null,
+          name: validated.newUniversityName.trim(),
+          city: validated.city?.trim() || null,
           is_active: true,
         })
         .select("id")
@@ -191,6 +200,11 @@ export async function mergeUnlistedUniversityAction(params: {
       return { success: false, error: "Hedef üniversite belirlenemedi." };
     }
 
+    // Escape SQL LIKE wildcards (% and _) to prevent unintended mass updates
+    const escapedPattern = validated.rawName
+      .trim()
+      .replace(/[\\%_]/g, (char) => `\\${char}`);
+
     // 2. Update all profiles that typed this exact rawName in university_other
     const { error: updateErr, count } = await adminClient
       .from("profiles")
@@ -198,7 +212,7 @@ export async function mergeUnlistedUniversityAction(params: {
         university_id: finalUniversityId,
         university_other: null,
       })
-      .ilike("university_other", params.rawName.trim());
+      .ilike("university_other", escapedPattern);
 
     if (updateErr) {
       return { success: false, error: updateErr.message };
@@ -209,8 +223,8 @@ export async function mergeUnlistedUniversityAction(params: {
       entityType: "university",
       entityId: finalUniversityId,
       details: {
-        rawName: params.rawName,
-        action: params.action,
+        rawName: validated.rawName,
+        action: validated.action,
         merged_profiles_count: count ?? 0,
       },
       adminId: session.user.id,

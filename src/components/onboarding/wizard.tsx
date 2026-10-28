@@ -3,18 +3,12 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Compass,
   CheckCircle2,
   ArrowRight,
   ArrowLeft,
   Sparkles,
-  School,
   GraduationCap,
-  Briefcase,
   Target,
-  Clock,
-  BookOpen,
-  Calendar,
   AlertCircle,
   Loader2,
   Code2,
@@ -22,6 +16,7 @@ import {
   HeartHandshake,
 } from "lucide-react";
 import { saveOnboardingAssessment } from "@/actions/onboarding";
+import type { DraftAssessment, LearningStyle, SkillCategory } from "@/types/database";
 
 interface University {
   id: string;
@@ -40,7 +35,7 @@ interface CareerPath {
 interface Skill {
   id: string;
   slug: string;
-  category: "technical" | "business" | "soft";
+  category: SkillCategory;
   name_tr: string;
   icon: string | null;
   sort_order: number;
@@ -50,7 +45,10 @@ interface WizardProps {
   universities: University[];
   careerPaths: CareerPath[];
   skills: Skill[];
-  initialDraft?: any;
+  initialDraft?: DraftAssessment | null;
+  initialUniversityId?: string | null;
+  initialUniversityOther?: string | null;
+  initialCareerPathId?: string | null;
 }
 
 const STEP_TITLES = [
@@ -69,7 +67,15 @@ const LEVEL_DESCRIPTIONS = [
   { level: 5, label: "Uzmanım / İleri", desc: "Derinlemesine hakimim, başkalarına öğretebilirim." },
 ];
 
-export function OnboardingWizard({ universities, careerPaths, skills, initialDraft }: WizardProps) {
+export function OnboardingWizard({
+  universities,
+  careerPaths,
+  skills,
+  initialDraft,
+  initialUniversityId,
+  initialUniversityOther,
+  initialCareerPathId,
+}: WizardProps) {
   const router = useRouter();
 
   // Wizard State
@@ -78,12 +84,24 @@ export function OnboardingWizard({ universities, careerPaths, skills, initialDra
   const [error, setError] = useState<string | null>(null);
 
   // Step 1: Basic
-  const [universityId, setUniversityId] = useState<string>(initialDraft?.university_id || universities[0]?.id || "");
-  const [universityOther, setUniversityOther] = useState<string>("");
+  const [universityId, setUniversityId] = useState<string>(
+    initialUniversityOther
+      ? "other"
+      : initialUniversityId || universities[0]?.id || ""
+  );
+  const [universityOther, setUniversityOther] = useState<string>(
+    initialUniversityOther || ""
+  );
   const [classYear, setClassYear] = useState<number>(initialDraft?.class_year ?? 3);
-  const [careerPathId, setCareerPathId] = useState<string>(initialDraft?.career_path_id || careerPaths[0]?.id || "");
-  const [secondaryCareerPathId, setSecondaryCareerPathId] = useState<string>(initialDraft?.secondary_career_path_id || "");
-  const [hasInternship, setHasInternship] = useState<boolean>(initialDraft?.has_internship ?? false);
+  const [careerPathId, setCareerPathId] = useState<string>(
+    initialDraft?.career_path_id || initialCareerPathId || careerPaths[0]?.id || ""
+  );
+  const [secondaryCareerPathId] = useState<string>(
+    initialDraft?.secondary_career_path_id || ""
+  );
+  const [hasInternship, setHasInternship] = useState<boolean>(
+    initialDraft?.has_internship ?? false
+  );
 
   // Steps 2, 3, 4: Ratings (skillId -> 1..5)
   const initialRatings: Record<string, number> = {};
@@ -91,7 +109,7 @@ export function OnboardingWizard({ universities, careerPaths, skills, initialDra
     initialRatings[s.id] = 1;
   });
   if (initialDraft?.ratings) {
-    initialDraft.ratings.forEach((r: any) => {
+    initialDraft.ratings.forEach((r) => {
       initialRatings[r.skill_id] = r.level;
     });
   }
@@ -99,10 +117,10 @@ export function OnboardingWizard({ universities, careerPaths, skills, initialDra
 
   // Step 5: Goals & Preferences
   const [weeklyHours, setWeeklyHours] = useState<number>(initialDraft?.weekly_hours ?? 10);
-  const [learningStyle, setLearningStyle] = useState<"video" | "reading" | "hands_on" | "mixed">(
+  const [learningStyle, setLearningStyle] = useState<LearningStyle>(
     initialDraft?.learning_style || "hands_on"
   );
-  const [targetDate, setTargetDate] = useState<string>(initialDraft?.target_date || "");
+  const [targetDate] = useState<string>(initialDraft?.target_date || "");
   const [goalsNote, setGoalsNote] = useState<string>(initialDraft?.goals_note || "");
 
   // Categorized skills
@@ -151,8 +169,9 @@ export function OnboardingWizard({ universities, careerPaths, skills, initialDra
 
       setStep((prev) => Math.min(prev + 1, 5));
       window.scrollTo({ top: 0, behavior: "smooth" });
-    } catch (err: any) {
-      setError(err?.message || "Beklenmeyen bir hata oluştu.");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Beklenmeyen bir hata oluştu.";
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -163,13 +182,20 @@ export function OnboardingWizard({ universities, careerPaths, skills, initialDra
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  const learningStyleOptions: { id: LearningStyle; label: string; desc: string }[] = [
+    { id: "hands_on", label: "Uygulamalı / Proje", desc: "Kod yazarak ve yaparak" },
+    { id: "video", label: "Video İzleyerek", desc: "YouTube & Kurs serileri" },
+    { id: "reading", label: "Okuyarak / Döküman", desc: "Makale, kitap ve rehberler" },
+    { id: "mixed", label: "Karma / Dengeli", desc: "Teori ve pratiği bir arada" },
+  ];
+
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
       {/* Brand Header */}
       <div className="text-center mb-8">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-bold mb-3 border border-blue-200/60">
-          <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-          <span>Kişiselleştirilmiş Kariyer Check-Up'ı</span>
+          <Sparkles className="w-3.5 h-3.5 text-[#2F5BFF]" />
+          <span>Kişiselleştirilmiş Kariyer Check-Up&apos;ı</span>
         </div>
         <h1 className="text-2xl sm:text-3xl font-extrabold text-[#0B1F4D] tracking-tight">
           YBS Kariyer Profilini Oluştur
@@ -183,7 +209,6 @@ export function OnboardingWizard({ universities, careerPaths, skills, initialDra
       <div className="mb-8 bg-white p-4 sm:p-6 rounded-2xl border border-slate-200/80 shadow-xs">
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
           {STEP_TITLES.map((st) => {
-            const Icon = st.icon;
             const isCompleted = step > st.id;
             const isCurrent = step === st.id;
 
@@ -204,13 +229,17 @@ export function OnboardingWizard({ universities, careerPaths, skills, initialDra
                       isCompleted
                         ? "bg-emerald-600 text-white"
                         : isCurrent
-                        ? "bg-[#2563EB] text-white"
+                        ? "bg-[#2F5BFF] text-white"
                         : "bg-slate-200 text-slate-600"
                     }`}
                   >
                     {isCompleted ? <CheckCircle2 className="w-3.5 h-3.5" /> : st.id}
                   </div>
-                  <span className={`text-xs font-bold truncate ${isCurrent ? "text-blue-900" : "text-slate-700"}`}>
+                  <span
+                    className={`text-xs font-bold truncate ${
+                      isCurrent ? "text-blue-900" : "text-slate-700"
+                    }`}
+                  >
                     {st.title}
                   </span>
                 </div>
@@ -234,7 +263,9 @@ export function OnboardingWizard({ universities, careerPaths, skills, initialDra
         {step === 1 && (
           <div className="space-y-8">
             <div>
-              <h2 className="text-xl font-bold text-[#0B1F4D]">Adım 1: Temel Bilgiler ve Kariyer Hedefin</h2>
+              <h2 className="text-xl font-bold text-[#0B1F4D]">
+                Adım 1: Temel Bilgiler ve Kariyer Hedefin
+              </h2>
               <p className="text-xs text-slate-500 mt-1">
                 Eğitim durumunu ve seni en çok heyecanlandıran YBS kariyer alanını seç.
               </p>
@@ -264,6 +295,7 @@ export function OnboardingWizard({ universities, careerPaths, skills, initialDra
                   placeholder="Üniversite adınızı yazın..."
                   value={universityOther}
                   onChange={(e) => setUniversityOther(e.target.value)}
+                  maxLength={150}
                   className="mt-3 w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm"
                 />
               )}
@@ -289,7 +321,7 @@ export function OnboardingWizard({ universities, careerPaths, skills, initialDra
                     onClick={() => setClassYear(item.value)}
                     className={`py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
                       classYear === item.value
-                        ? "bg-[#2563EB] text-white border-blue-600 shadow-md shadow-blue-500/20"
+                        ? "bg-[#2F5BFF] text-white border-[#2F5BFF] shadow-md shadow-blue-500/20"
                         : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
                     }`}
                   >
@@ -313,13 +345,13 @@ export function OnboardingWizard({ universities, careerPaths, skills, initialDra
                       onClick={() => setCareerPathId(cp.id)}
                       className={`p-4 rounded-2xl border cursor-pointer transition-all ${
                         isSelected
-                          ? "bg-blue-50/70 border-blue-600 ring-2 ring-blue-500/30"
+                          ? "bg-blue-50/70 border-[#2F5BFF] ring-2 ring-blue-500/30"
                           : "bg-slate-50/60 border-slate-200 hover:border-slate-300"
                       }`}
                     >
                       <div className="flex items-center justify-between mb-1">
                         <span className="font-bold text-sm text-slate-900">{cp.name_tr}</span>
-                        {isSelected && <CheckCircle2 className="w-4 h-4 text-blue-600" />}
+                        {isSelected && <CheckCircle2 className="w-4 h-4 text-[#2F5BFF]" />}
                       </div>
                       <p className="text-xs text-slate-500 line-clamp-2">{cp.description_tr}</p>
                     </div>
@@ -339,7 +371,7 @@ export function OnboardingWizard({ universities, careerPaths, skills, initialDra
                   onClick={() => setHasInternship(true)}
                   className={`flex-1 py-3 px-4 rounded-xl text-xs font-bold border cursor-pointer ${
                     hasInternship
-                      ? "bg-blue-600 text-white border-blue-600"
+                      ? "bg-[#2F5BFF] text-white border-[#2F5BFF]"
                       : "bg-slate-50 text-slate-700 border-slate-200"
                   }`}
                 >
@@ -350,7 +382,7 @@ export function OnboardingWizard({ universities, careerPaths, skills, initialDra
                   onClick={() => setHasInternship(false)}
                   className={`flex-1 py-3 px-4 rounded-xl text-xs font-bold border cursor-pointer ${
                     !hasInternship
-                      ? "bg-blue-600 text-white border-blue-600"
+                      ? "bg-[#2F5BFF] text-white border-[#2F5BFF]"
                       : "bg-slate-50 text-slate-700 border-slate-200"
                   }`}
                 >
@@ -365,7 +397,9 @@ export function OnboardingWizard({ universities, careerPaths, skills, initialDra
         {step === 2 && (
           <div>
             <div className="mb-6">
-              <h2 className="text-xl font-bold text-[#0B1F4D]">Adım 2: Teknik Beceriler ve Araçlar</h2>
+              <h2 className="text-xl font-bold text-[#0B1F4D]">
+                Adım 2: Teknik Beceriler ve Araçlar
+              </h2>
               <p className="text-xs text-slate-500 mt-1">
                 Her bir teknik araç için mevcut bilgi ve uygulama seviyeni 1-5 arasında işaretle.
               </p>
@@ -382,7 +416,9 @@ export function OnboardingWizard({ universities, careerPaths, skills, initialDra
         {step === 3 && (
           <div>
             <div className="mb-6">
-              <h2 className="text-xl font-bold text-[#0B1F4D]">Adım 3: İşletme ve Süreç Bilgisi</h2>
+              <h2 className="text-xl font-bold text-[#0B1F4D]">
+                Adım 3: İşletme ve Süreç Bilgisi
+              </h2>
               <p className="text-xs text-slate-500 mt-1">
                 İş analizi, süreç modelleme ve kurumsal yönetim yetkinliklerini değerlendir.
               </p>
@@ -399,7 +435,9 @@ export function OnboardingWizard({ universities, careerPaths, skills, initialDra
         {step === 4 && (
           <div>
             <div className="mb-6">
-              <h2 className="text-xl font-bold text-[#0B1F4D]">Adım 4: Sosyal ve İletişim Becerileri</h2>
+              <h2 className="text-xl font-bold text-[#0B1F4D]">
+                Adım 4: Sosyal ve İletişim Becerileri
+              </h2>
               <p className="text-xs text-slate-500 mt-1">
                 Takım çalışması, sunum, problem çözme ve yabancı dil yetkinliklerini puanla.
               </p>
@@ -416,7 +454,9 @@ export function OnboardingWizard({ universities, careerPaths, skills, initialDra
         {step === 5 && (
           <div className="space-y-8">
             <div>
-              <h2 className="text-xl font-bold text-[#0B1F4D]">Adım 5: Hedefler ve Çalışma Tercihleri</h2>
+              <h2 className="text-xl font-bold text-[#0B1F4D]">
+                Adım 5: Hedefler ve Çalışma Tercihleri
+              </h2>
               <p className="text-xs text-slate-500 mt-1">
                 Yapay zekanın üreteceği görevlerin sana ve takvimine tam uyması için bu tercihleri belirt.
               </p>
@@ -428,7 +468,7 @@ export function OnboardingWizard({ universities, careerPaths, skills, initialDra
                 <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
                   Haftalık Kendini Geliştirmeye Ayırabileceğin Süre
                 </label>
-                <span className="text-sm font-extrabold text-blue-600 bg-blue-50 px-3 py-1 rounded-full border border-blue-200">
+                <span className="text-sm font-extrabold text-[#2F5BFF] bg-blue-50 px-3 py-1 rounded-full border border-blue-200">
                   {weeklyHours} Saat / Hafta
                 </span>
               </div>
@@ -439,7 +479,7 @@ export function OnboardingWizard({ universities, careerPaths, skills, initialDra
                 step={2}
                 value={weeklyHours}
                 onChange={(e) => setWeeklyHours(Number(e.target.value))}
-                className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-[#2F5BFF]"
               />
               <div className="flex justify-between text-[11px] text-slate-400 mt-1">
                 <span>2 Saat (Hafif tempo)</span>
@@ -454,19 +494,14 @@ export function OnboardingWizard({ universities, careerPaths, skills, initialDra
                 Nasıl Daha İyi Öğreniyorsun?
               </label>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {[
-                  { id: "hands_on", label: "Uygulamalı / Proje", desc: "Kod yazarak ve yaparak" },
-                  { id: "video", label: "Video İzleyerek", desc: "YouTube & Kurs serileri" },
-                  { id: "reading", label: "Okuyarak / Döküman", desc: "Makale, kitap ve rehberler" },
-                  { id: "mixed", label: "Karma / Dengeli", desc: "Teori ve pratiği bir arada" },
-                ].map((ls) => (
+                {learningStyleOptions.map((ls) => (
                   <button
                     key={ls.id}
                     type="button"
-                    onClick={() => setLearningStyle(ls.id as any)}
+                    onClick={() => setLearningStyle(ls.id)}
                     className={`p-4 rounded-2xl border text-left cursor-pointer transition-all ${
                       learningStyle === ls.id
-                        ? "bg-blue-50/80 border-blue-600 ring-2 ring-blue-500/30 text-blue-900"
+                        ? "bg-blue-50/80 border-[#2F5BFF] ring-2 ring-blue-500/30 text-blue-900"
                         : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
                     }`}
                   >
@@ -515,7 +550,7 @@ export function OnboardingWizard({ universities, careerPaths, skills, initialDra
               type="button"
               onClick={() => handleNext(false)}
               disabled={loading}
-              className="inline-flex items-center gap-2 bg-[#2563EB] hover:bg-blue-700 text-white font-semibold px-6 py-3 rounded-xl text-xs shadow-md shadow-blue-500/20 cursor-pointer transition-all"
+              className="inline-flex items-center gap-2 bg-[#2F5BFF] hover:bg-blue-700 text-white font-semibold px-6 py-3 rounded-xl text-xs shadow-md shadow-blue-500/20 cursor-pointer transition-all"
             >
               {loading ? (
                 <>
@@ -534,7 +569,7 @@ export function OnboardingWizard({ universities, careerPaths, skills, initialDra
               type="button"
               onClick={() => handleNext(true)}
               disabled={loading}
-              className="inline-flex items-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold px-8 py-3.5 rounded-xl text-sm shadow-xl shadow-blue-600/30 cursor-pointer transition-all hover:scale-102 active:scale-98"
+              className="inline-flex items-center gap-2 bg-gradient-to-r from-[#2F5BFF] to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold px-8 py-3.5 rounded-xl text-sm shadow-xl shadow-blue-600/30 cursor-pointer transition-all hover:scale-[1.02] active:scale-[0.98]"
             >
               {loading ? (
                 <>
@@ -544,7 +579,7 @@ export function OnboardingWizard({ universities, careerPaths, skills, initialDra
               ) : (
                 <>
                   <Sparkles className="w-4 h-4 text-amber-300" />
-                  <span>Check-Up'ı Bitir & Yol Haritasını Gör</span>
+                  <span>Check-Up&apos;ı Bitir &amp; Yol Haritasını Gör</span>
                 </>
               )}
             </button>
@@ -579,7 +614,7 @@ function SkillRatingList({
               <div>
                 <span className="font-bold text-sm text-slate-900">{skill.name_tr}</span>
               </div>
-              <div className="text-xs font-semibold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200/50 self-start sm:self-auto">
+              <div className="text-xs font-semibold text-[#2F5BFF] bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200/50 self-start sm:self-auto">
                 {LEVEL_DESCRIPTIONS[currentLevel - 1].label} (Seviye {currentLevel}/5)
               </div>
             </div>
@@ -595,7 +630,7 @@ function SkillRatingList({
                     onClick={() => onRate(skill.id, lvl)}
                     className={`py-3 px-2 rounded-xl text-xs font-bold border transition-all cursor-pointer flex flex-col items-center gap-1 ${
                       isSelected
-                        ? "bg-[#2563EB] text-white border-blue-600 shadow-md shadow-blue-500/20 scale-[1.02]"
+                        ? "bg-[#2F5BFF] text-white border-[#2F5BFF] shadow-md shadow-blue-500/20 scale-[1.02]"
                         : "bg-white border-slate-200 text-slate-700 hover:bg-slate-100"
                     }`}
                   >

@@ -1,31 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { CheckCircle2, Circle, ExternalLink, Clock, Sparkles, Award, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { toggleTaskStatus } from "@/actions/tasks";
-
-interface TaskItem {
-  id: string;
-  title: string;
-  description: string | null;
-  resource_url: string | null;
-  resource_type: string;
-  estimated_hours: number | null;
-  difficulty: number;
-  xp_reward: number;
-  week_number: number | null;
-  status: "pending" | "in_progress" | "completed" | "skipped";
-}
+import type { TaskRow } from "@/types/database";
 
 interface TaskChecklistProps {
-  tasks: TaskItem[];
+  tasks: TaskRow[];
 }
 
 export function TaskChecklist({ tasks: initialTasks }: TaskChecklistProps) {
-  const [tasks, setTasks] = useState<TaskItem[]>(initialTasks);
+  const [tasks, setTasks] = useState<TaskRow[]>(initialTasks);
   const [togglingId, setTogglingId] = useState<string | null>(null);
 
-  async function handleToggle(task: TaskItem) {
+  useEffect(() => {
+    setTasks(initialTasks);
+  }, [initialTasks]);
+
+  async function handleToggle(task: TaskRow) {
     setTogglingId(task.id);
     const nextStatus = task.status === "completed" ? "pending" : "completed";
 
@@ -34,20 +27,23 @@ export function TaskChecklist({ tasks: initialTasks }: TaskChecklistProps) {
       prev.map((t) => (t.id === task.id ? { ...t, status: nextStatus } : t))
     );
 
-    const res = await toggleTaskStatus(task.id, task.status as any);
+    const res = await toggleTaskStatus(task.id, task.status);
 
     if (res?.error) {
       // Revert if error
       setTasks((prev) =>
         prev.map((t) => (t.id === task.id ? { ...t, status: task.status } : t))
       );
+      toast.error(res.error);
+    } else if (nextStatus === "completed") {
+      toast.success(`Görev tamamlandı! +${task.xp_reward} XP kazandın 🎉`);
     }
 
     setTogglingId(null);
   }
 
   // Group tasks by week
-  const groupedTasks: Record<number, TaskItem[]> = {};
+  const groupedTasks: Record<number, TaskRow[]> = {};
   tasks.forEach((t) => {
     const w = t.week_number || 1;
     if (!groupedTasks[w]) groupedTasks[w] = [];

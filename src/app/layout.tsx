@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Plus_Jakarta_Sans } from "next/font/google";
+import { Toaster } from "sonner";
 import "./globals.css";
 
 const jakarta = Plus_Jakarta_Sans({
@@ -38,18 +39,12 @@ export const metadata: Metadata = {
     description:
       "Okulda öğrendiklerin sektörde ne kadar geçerli? 5 dakikalık check-up ile yetkinliklerini test et, sektörle arandaki farkı gör.",
   },
-  icons: {
-    icon: "/favicon.svg",
-    shortcut: "/favicon.svg",
-    apple: "/favicon.svg",
-  },
 };
 
 export const viewport: Viewport = {
   themeColor: "#0B1F4D",
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
 };
 
 export default function RootLayout({
@@ -61,6 +56,7 @@ export default function RootLayout({
     <html lang="tr" className={jakarta.variable}>
       <body className="font-sans antialiased bg-[#F7F9FC] text-slate-900 selection:bg-blue-600 selection:text-white">
         {children}
+        <Toaster position="top-right" richColors closeButton />
       </body>
     </html>
   );

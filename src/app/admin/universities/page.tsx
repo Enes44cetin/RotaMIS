@@ -1,4 +1,5 @@
 import { Metadata } from "next";
+import { requireAdmin } from "@/lib/auth/require-admin";
 import { createClient } from "@/lib/supabase/server";
 import {
   UniversitiesManager,
@@ -11,20 +12,23 @@ export const metadata: Metadata = {
 };
 
 export default async function AdminUniversitiesPage() {
+  await requireAdmin();
   const supabase = await createClient();
 
   // 1. Fetch universities and unlisted profiles in parallel
   const [{ data: rawUnis }, { data: unlistedProfiles }] = await Promise.all([
     supabase
       .from("universities")
-      .select(`
+      .select(
+        `
         id,
         name,
         city,
         is_active,
         sort_order,
         profiles:profiles(count)
-      `)
+      `
+      )
       .order("sort_order"),
     supabase
       .from("profiles")
@@ -38,7 +42,8 @@ export default async function AdminUniversitiesPage() {
     city: u.city,
     is_active: u.is_active,
     sort_order: u.sort_order,
-    studentCount: (u.profiles as unknown as { count: number }[])?.[0]?.count ?? 0,
+    studentCount:
+      (u.profiles as unknown as { count: number }[])?.[0]?.count ?? 0,
   }));
 
   const unlistedCountMap = new Map<string, number>();
@@ -58,7 +63,8 @@ export default async function AdminUniversitiesPage() {
       <div>
         <h1 className="text-xl font-bold text-[#0B1F4D]">Üniversiteler Kataloğu</h1>
         <p className="text-xs text-slate-500 mt-0.5">
-          Sistemde tanımlı üniversiteleri yönetin ve öğrencilerin girdiği özel üniversite isimlerini eşleştirin.
+          Sistemde tanımlı üniversiteleri yönetin ve öğrencilerin girdiği özel üniversite
+          isimlerini eşleştirin.
         </p>
       </div>
 

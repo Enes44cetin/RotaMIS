@@ -23,7 +23,7 @@ export function RoleChips({ currentIndex, onSelect }: RoleChipsProps) {
             onClick={() => onSelect(idx)}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center gap-1.5 ${
               isSelected
-                ? "bg-[#2F5BFF] text-white border-[#2F5BFF] shadow-sm shadow-blue-500/30 scale-102"
+                ? "bg-[#2F5BFF] text-white border-[#2F5BFF] shadow-sm shadow-blue-500/30 scale-[1.02]"
                 : "bg-white text-slate-700 border-slate-200/90 hover:border-slate-300 hover:bg-slate-50"
             }`}
           >

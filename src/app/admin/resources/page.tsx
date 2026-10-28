@@ -1,4 +1,5 @@
 import { Metadata } from "next";
+import { requireAdmin } from "@/lib/auth/require-admin";
 import { createClient } from "@/lib/supabase/server";
 import {
   ResourcesManager,
@@ -11,13 +12,15 @@ export const metadata: Metadata = {
 };
 
 export default async function AdminResourcesPage() {
+  await requireAdmin();
   const supabase = await createClient();
 
   // 1. Fetch learning resources and available skills in parallel
   const [{ data: rawResources }, { data: rawSkills }] = await Promise.all([
     supabase
       .from("learning_resources")
-      .select(`
+      .select(
+        `
         id,
         title,
         provider,
@@ -43,7 +46,8 @@ export default async function AdminResourcesPage() {
             name_tr
           )
         )
-      `)
+      `
+      )
       .order("sort_order"),
     supabase
       .from("skills")
@@ -58,12 +62,13 @@ export default async function AdminResourcesPage() {
   }));
 
   const resources: ResourceItem[] = (rawResources || []).map((r) => {
-    const rawSkillsList = (r.resource_skills as unknown as {
-      skill_id: string;
-      min_level: number;
-      target_level: number;
-      skill: { id: string; name_tr: string } | null;
-    }[]) || [];
+    const rawSkillsList =
+      (r.resource_skills as unknown as {
+        skill_id: string;
+        min_level: number;
+        target_level: number;
+        skill: { id: string; name_tr: string } | null;
+      }[]) || [];
 
     return {
       id: r.id,
@@ -94,16 +99,16 @@ export default async function AdminResourcesPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-bold text-[#0B1F4D]">Eğitim & Sertifika Kataloğu</h1>
+        <h1 className="text-xl font-bold text-[#0B1F4D]">
+          Eğitim &amp; Sertifika Kataloğu
+        </h1>
         <p className="text-xs text-slate-500 mt-0.5">
-          Öğrencilerin kişiselleştirilmiş yol haritalarına atanacak doğrulanmış kurs, pratik ve sertifika kaynaklarını yönetin.
+          Öğrencilerin kişiselleştirilmiş yol haritalarına atanacak doğrulanmış kurs,
+          pratik ve sertifika kaynaklarını yönetin.
         </p>
       </div>
 
-      <ResourcesManager
-        resources={resources}
-        availableSkills={availableSkills}
-      />
+      <ResourcesManager resources={resources} availableSkills={availableSkills} />
     </div>
   );
 }

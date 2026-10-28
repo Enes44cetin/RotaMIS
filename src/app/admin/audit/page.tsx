@@ -1,6 +1,7 @@
 import { Metadata } from "next";
+import { requireAdmin } from "@/lib/auth/require-admin";
 import { createClient } from "@/lib/supabase/server";
-import { History, ShieldCheck, Clock, Layers } from "lucide-react";
+import { History, Clock } from "lucide-react";
 
 export const metadata: Metadata = {
   title: "Denetim & Değişiklik Geçmişi — Admin Konsolu",
@@ -18,11 +19,13 @@ interface AuditItem {
 }
 
 export default async function AdminAuditPage() {
+  await requireAdmin();
   const supabase = await createClient();
 
   const { data: rawLogs } = await supabase
     .from("admin_audit_log")
-    .select(`
+    .select(
+      `
       id,
       action,
       entity_type,
@@ -33,7 +36,8 @@ export default async function AdminAuditPage() {
         full_name,
         email
       )
-    `)
+    `
+    )
     .order("created_at", { ascending: false })
     .limit(100);
 
@@ -78,7 +82,7 @@ export default async function AdminAuditPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-bold text-[#0B1F4D]">Denetim & Değişiklik Geçmişi</h1>
+        <h1 className="text-xl font-bold text-[#0B1F4D]">Denetim &amp; Değişiklik Geçmişi</h1>
         <p className="text-xs text-slate-500 mt-0.5">
           Admin konsolu üzerinden yapılan tüm kritik matris, katalog ve eşleştirme hareketleri bu defterde değişmez olarak kaydedilir.
         </p>
@@ -100,7 +104,7 @@ export default async function AdminAuditPage() {
                 >
                   <div className="flex items-start gap-3">
                     <div className="w-8 h-8 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center shrink-0 mt-0.5">
-                      <History className="w-4 h-4 text-blue-600" />
+                      <History className="w-4 h-4 text-[#2F5BFF]" />
                     </div>
 
                     <div>
@@ -115,7 +119,9 @@ export default async function AdminAuditPage() {
 
                       <div className="text-xs text-slate-700 mt-1 flex items-center gap-2">
                         <span className="font-bold">{log.admin_name}</span>
-                        <span className="text-slate-400 font-mono text-[10px]">({log.admin_email})</span>
+                        <span className="text-slate-400 font-mono text-[10px]">
+                          ({log.admin_email})
+                        </span>
                       </div>
 
                       {/* Details preview */}

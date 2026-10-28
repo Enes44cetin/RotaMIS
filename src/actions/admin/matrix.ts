@@ -3,17 +3,21 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { createClient } from "@/lib/supabase/server";
-import { saveMatrixSchema, type SaveMatrixFormData } from "@/lib/validation/admin-schemas";
+import {
+  saveMatrixSchema,
+  copyMatrixSchema,
+  type SaveMatrixFormData,
+} from "@/lib/validation/admin-schemas";
 import { logAdminAction } from "@/lib/admin/audit";
 
 export async function saveMatrixAction(data: SaveMatrixFormData) {
   try {
-    const session = await requireAdmin();
+    await requireAdmin();
     const validated = saveMatrixSchema.parse(data);
 
     const supabase = await createClient();
 
-    // Call atomic RPC function in Postgres
+    // Call atomic RPC function in Postgres (which also records the audit log entry atomically)
     const { error } = await supabase.rpc("save_requirement_matrix", {
       p_career_path_id: validated.career_path_id,
       p_requirements: validated.requirements,
@@ -24,14 +28,6 @@ export async function saveMatrixAction(data: SaveMatrixFormData) {
       return { success: false, error: error.message };
     }
 
-    await logAdminAction({
-      action: "update_matrix",
-      entityType: "matrix",
-      entityId: validated.career_path_id,
-      details: { count: validated.requirements.length },
-      adminId: session.user.id,
-    });
-
     // Revalidate affected pages
     revalidatePath("/admin/matrix");
     revalidatePath("/admin");
@@ -39,21 +35,30 @@ export async function saveMatrixAction(data: SaveMatrixFormData) {
 
     return { success: true };
   } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : "Matris kaydedilirken bir hata oluştu";
+    const errorMsg =
+      err instanceof Error ? err.message : "Matris kaydedilirken bir hata oluştu";
     return { success: false, error: errorMsg };
   }
 }
 
-export async function copyMatrixAction(sourceCareerPathId: string, targetCareerPathId: string) {
+export async function copyMatrixAction(
+  sourceCareerPathId: string,
+  targetCareerPathId: string
+) {
   try {
     const session = await requireAdmin();
+    const validated = copyMatrixSchema.parse({
+      sourceCareerPathId,
+      targetCareerPathId,
+    });
+
     const supabase = await createClient();
 
     // 1. Fetch requirements from source
     const { data: sourceReqs, error: fetchErr } = await supabase
       .from("career_path_skill_requirements")
       .select("skill_id, required_level, importance")
-      .eq("career_path_id", sourceCareerPathId);
+      .eq("career_path_id", validated.sourceCareerPathId);
 
     if (fetchErr || !sourceReqs) {
       return { success: false, error: "Kaynak rotanın gereksinimleri alınamadı." };
@@ -61,7 +66,7 @@ export async function copyMatrixAction(sourceCareerPathId: string, targetCareerP
 
     // 2. Save into target via RPC
     const { error: rpcErr } = await supabase.rpc("save_requirement_matrix", {
-      p_career_path_id: targetCareerPathId,
+      p_career_path_id: validated.targetCareerPathId,
       p_requirements: sourceReqs,
     });
 
@@ -72,10 +77,10 @@ export async function copyMatrixAction(sourceCareerPathId: string, targetCareerP
     await logAdminAction({
       action: "copy_matrix",
       entityType: "matrix",
-      entityId: targetCareerPathId,
+      entityId: validated.targetCareerPathId,
       details: {
-        source_id: sourceCareerPathId,
-        target_id: targetCareerPathId,
+        source_id: validated.sourceCareerPathId,
+        target_id: validated.targetCareerPathId,
         copied_count: sourceReqs.length,
       },
       adminId: session.user.id,
@@ -86,7 +91,8 @@ export async function copyMatrixAction(sourceCareerPathId: string, targetCareerP
 
     return { success: true, count: sourceReqs.length };
   } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : "Kopyalama sırasında hata oluştu";
+    const errorMsg =
+      err instanceof Error ? err.message : "Kopyalama sırasında hata oluştu";
     return { success: false, error: errorMsg };
   }
 }

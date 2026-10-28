@@ -139,7 +139,7 @@ export function HowItWorksSection() {
                 <div className="p-3 rounded-xl bg-white border border-slate-200/80 shadow-xs flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span className="text-[11px] font-bold text-slate-800 line-through text-slate-400">
+                    <span className="text-[11px] font-bold line-through text-slate-400">
                       BPMN Sipariş Akışı Çiz
                     </span>
                   </div>
@@ -158,7 +158,7 @@ export function HowItWorksSection() {
           <Reveal direction="up" delay={0.35}>
             <Link
               href="/register"
-              className="inline-flex items-center gap-2 bg-[#0B1F4D] hover:bg-slate-900 text-white font-bold px-7 py-3.5 rounded-xl shadow-md transition-all active:scale-98 text-sm group"
+              className="inline-flex items-center gap-2 bg-[#0B1F4D] hover:bg-slate-900 text-white font-bold px-7 py-3.5 rounded-xl shadow-md transition-all active:scale-[0.98] text-sm group"
             >
               <span>Yetkinliklerini Ölç</span>
               <ArrowRight className="w-4 h-4 text-[#2F5BFF] group-hover:translate-x-1 transition-transform" />

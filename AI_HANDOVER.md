@@ -43,8 +43,8 @@ Bugüne kadar projenin tüm temel altyapısı (Landing Page, Auth akışı, Onbo
 
 ### ⚡ Yeni Tamamlanan Performans İyileştirmeleri
 - **React `cache()` Memoization:** `requireAdmin` çağrısı memoize edildi; tek bir request yaşam döngüsünde mükerrer DB ve auth çağrıları sıfıra indirildi.
-- **Middleware Optimizasyonu:** `middleware.ts` içindeki ağır veritabanı sorgusu kaldırıldı. Middleware latensi **890ms'den 4ms'ye** düştü.
-- **Paralel DB Sorguları (`Promise.all`):** Admin sayfalarındaki ardışık waterfall sorgular eşzamanlı hale getirildi (sayfa açılışları 1.5s $\rightarrow$ ~250ms).
+- **Next.js 16 `proxy.ts` Optimizasyonu:** `src/proxy.ts` (middleware) içindeki ağır veritabanı sorgusu kaldırıldı. Proxy latensi **890ms'den 4ms'ye** düştü.
+- **Paralel DB Sorguları (`Promise.all`):** Öğrenci Dashboard, Onboarding ve Admin sayfalarındaki ardışık waterfall sorgular eşzamanlı hale getirildi (sayfa açılışları 1.5s $\rightarrow$ ~250ms).
 - **Optimistic UI:** Yönetici sayfalarındaki silme, arşivleme ve güncelleme işlemleri yerel state üzerinden **0 ms** tepki süresiyle anında güncelleniyor.
 
 ---
@@ -70,20 +70,20 @@ erDiagram
 ### 🎯 AI İçin En Kritik Tablo ve Görünümler
 
 #### 1. `v_skill_gap` (SQL View - En Önemli Görünüm)
-Öğrencinin hedeflediği kariyer rotası ile check-up'ta verdiği puanlar arasındaki açığı hazır matematiksel formülle (`required_level - student_level`) hesaplayan görünümdür.
+Öğrencinin hedeflediği kariyer rotası ile check-up'ta verdiği puanlar arasındaki açığı hazır matematiksel formülle (`required_level - current_level`) hesaplayan görünümdür (`10_checkup_fixes.sql` ile hem `name_tr`/`current_level` hem de `skill_name_tr`/`student_level`/`career_path_name` kolonlarını destekler).
 ```sql
 SELECT 
   user_id,
   career_path_id,
   career_path_name,
   skill_id,
-  skill_name_tr,
+  name_tr,         -- (veya alias: skill_name_tr)
   skill_slug,
   category,        -- 'technical' | 'business' | 'soft'
-  student_level,   -- Öğrencinin seviyesi (1-5)
-  required_level,  -- Sektörün beklediği seviye (1-5)
+  current_level,   -- (veya alias: student_level) Öğrencinin seviyesi (0-5)
+  required_level,  -- Sektörün beklediği seviye (0-5)
   importance,      -- Beklentinin önemi (1: Normal, 2: Önemli, 3: Kritik)
-  gap              -- required_level - student_level (Pozitifse açık var demektir)
+  gap              -- greatest(required_level - current_level, 0) (Pozitifse açık var demektir)
 FROM v_skill_gap
 WHERE user_id = $1
 ORDER BY gap DESC, importance DESC;
@@ -96,12 +96,12 @@ Admin panelinden eklenen, linkleri düzenli test edilen doğrulanmış eğitimle
 - `title`: Kaynak başlığı (Örn: "Sıfırdan İleri Seviye SQL Eğitimi")
 - `provider`: Sağlayıcı (BTK Akademi, Coursera, Udemy, YouTube, vb.)
 - `url`: Doğrulanmış eğitim linki
-- `resource_type`: 'course' | 'article' | 'video' | 'project' | 'certification' | 'practice'
-- `language`: 'tr' | 'en' | 'mixed'
-- `pricing`: 'free' | 'freemium' | 'paid'
-- `estimated_hours`: Tahmini tamamlanma saati
-- `difficulty`: 1 (Başlangıç) - 5 (İleri Düzey)
-- `status`: 'published' | 'draft' | 'archived' (AI sadece `'published'` olanları kullanmalıdır!)
+- `resource_type`: `'course' | 'article' | 'video' | 'project' | 'book' | 'practice'`
+- `language`: `'tr' | 'en' | 'mixed'`
+- `pricing`: `'free' | 'freemium' | 'paid'`
+- `estimated_hours`: Tahmini tamamlanma saati (`numeric(5,1)`)
+- `difficulty`: `1` (Başlangıç), `2` (Orta), `3` (İleri Düzey) — **Dikkat: DB CHECK kısıtı `1..3` arasındadır!**
+- `status`: `'published' | 'draft' | 'archived'` (AI sadece `'published'` olanları kullanmalıdır!)
 
 #### 3. `resource_skills` (Kaynak - Beceri Eşleştirme Tablosu)
 Hangi kaynağın hangi becerinin hangi seviyelerini kapattığını belirtir:
@@ -111,18 +111,22 @@ Hangi kaynağın hangi becerinin hangi seviyelerini kapattığını belirtir:
 - `target_level`: Eğitimi bitirince hedeflenen seviye (1-5)
 
 #### 4. `roadmaps` & `tasks` (AI Çıktısının Kaydedileceği Hedef Tablolar)
-- `roadmaps`: Öğrencinin aktif yol haritası (`user_id`, `career_path_id`, `title`, `summary`, `source: 'ai'`, `is_active: true`).
+- `roadmaps`: Öğrencinin aktif yol haritası (`user_id`, `assessment_id`, `career_path_id`, `title`, `summary`, `source: 'gemini'` veya `'ai'`, `is_active: true`).
 - `tasks`: Yol haritasına bağlı haftalık somut görevler.
-  - `roadmap_id`: Bağlı olduğu yol haritası
-  - `user_id`: Öğrenci ID
+  - `roadmap_id`: Bağlı olduğu yol haritası (`roadmaps.id`)
+  - `user_id`: Öğrenci ID (`profiles.id`)
+  - `skill_id`: İlgili beceri ID (`skills.id`)
   - `title`: Görev başlığı (Örn: "SQL GROUP BY & JOIN Mantığını Kavra")
   - `description`: AI tarafından yazılmış pedagojik, motive edici yönerge
-  - `week_number`: 1, 2, 3 veya 4
-  - `difficulty`: 1-5
-  - `estimated_minutes`: Görevin tahmini süresi (dk)
-  - `xp_reward`: Tamamlandığında kazanılacak XP (Örn: 50, 100)
+  - `week_number`: `1`, `2`, `3` veya `4`
+  - `difficulty`: `1`, `2` veya `3` (**Dikkat: `check (difficulty between 1 and 3)`**)
+  - `estimated_hours`: Görevin tahmini süresi — saat cinsinden (`numeric(4,1)`, örn: `3.5`)
+  - `xp_reward`: Tamamlandığında kazanılacak XP (Örn: `30`, `50`, `100`)
   - `resource_id`: `learning_resources.id` (Tıklayınca öğrenciyi doğrudan eğitime götürür)
-  - `is_completed`: Görev tamamlandı mı? (default: false)
+  - `resource_url`: `learning_resources.url` (Öğrenci kartında doğrudan dış bağlantı için)
+  - `resource_type`: `'course' | 'video' | 'article' | 'project' | 'book' | 'practice'`
+  - `status`: `'pending' | 'in_progress' | 'completed' | 'skipped'` (default: `'pending'`)
+  - `sort_order`: Sıralama tam sayısı (`int`)
 
 ---
 
@@ -135,16 +139,16 @@ Geliştirmen gereken 2 ana modül bulunmaktadır:
 ### Görev A: Dinamik ve Kişiselleştirilmiş Yol Haritası (Roadmap) Üretimi
 
 #### Mevcut Durum
-Şu an öğrenci check-up'ı tamamladığında [`src/actions/onboarding.ts`](file:///c:/Users/hp/Desktop/rotam%C4%B1s/src/actions/onboarding.ts) dosyasındaki `generateInitialRoadmap` fonksiyonu çalışıyor. Bu fonksiyon şablon görevler üreten bir "Mock" fonksiyondur.
+Şu an öğrenci check-up'ı tamamladığında [`src/actions/onboarding.ts`](file:///c:/Users/hp/Desktop/rotam%C4%B1s/src/actions/onboarding.ts) dosyasındaki `generateInitialRoadmap` fonksiyonu çalışıyor. Bu fonksiyon veritabanındaki `learning_resources` kataloğundan eşleşen kaynakları çeken kural tabanlı bir başlangıç fonksiyonudur.
 
 #### Beklenen Yeni AI Mimarisi
-Mock fonksiyonunu gerçek bir LLM (Örn: Google Gemini 1.5 Pro / Flash) çağrısıyla değiştireceksin.
+Kural tabanlı fonksiyonu gerçek bir LLM (Örn: Google Gemini 2.5 Flash / Pro) çağrısıyla zenginleştireceksin.
 
 #### 🛡️ Kritik Kural: Sıfır Halüsinasyon (Anti-Hallucination) Prensibi
 AI modelleri serbest bırakıldığında var olmayan kırık YouTube linkleri veya hayali kurslar uydurabilir. RotaMIS'te bunu engellemek için **"Context-Constrained Prompting"** uygulayacaksın:
 
-1. **Adım 1 (Gap Tespiti):** `v_skill_gap` tablosundan öğrencinin `gap > 0` olan en kritik 3 becerisini çek.
-2. **Adım 2 (Katalog Filtresi):** `learning_resources` tablosundan sadece bu 3 beceriyle eşleşen ve `status = 'published'` olan onaylı kaynakları çek.
+1. **Adım 1 (Gap Tespiti):** `v_skill_gap` tablosundan öğrencinin `gap > 0` olan en kritik 3-6 becerisini çek.
+2. **Adım 2 (Katalog Filtresi):** `learning_resources` tablosundan sadece bu becerilerle eşleşen ve `status = 'published'` olan onaylı kaynakları çek.
 3. **Adım 3 (LLM'e Sadece Bu Kaynakları Ver):** Prompt içerisine bu kaynakların ID, Başlık, Süre ve Hedef Seviyelerini JSON listesi olarak ver.
    > *"Sana aşağıda veritabanımızdaki doğrulanmış eğitim kaynaklarını veriyorum. ASLA bu liste dışından bir kaynak, link veya kurs uydurma. Görevlerde sadece verilen `resource_id` değerlerini kullan."*
 4. **Adım 4 (Structured JSON Çıktısı):** LLM'den yanıtı doğrudan TypeScript şemamıza uygun JSON formatında al (`response_format: { type: "json_object" }`).
@@ -160,10 +164,11 @@ AI modelleri serbest bırakıldığında var olmayan kırık YouTube linkleri ve
       "focus_area": "Veri Sorgulama Temelleri",
       "tasks": [
         {
+          "skill_id": "a1b2c3d4-...",
           "title": "İlişkisel Veritabanı ve SELECT Sorguları",
           "description": "Temel veri tabanı mimarisini kavra ve filtreleme alıştırmalarını tamamla.",
-          "resource_id": "97fb2203-ee5a-4637-b6a5-a4039accdb0e", // Veritabanındaki gerçek ID
-          "estimated_minutes": 180,
+          "resource_id": "97fb2203-ee5a-4637-b6a5-a4039accdb0e",
+          "estimated_hours": 3.5,
           "difficulty": 2,
           "xp_reward": 50
         }
@@ -174,8 +179,8 @@ AI modelleri serbest bırakıldığında var olmayan kırık YouTube linkleri ve
 ```
 
 5. **Adım 5 (Veritabanına Yazma):**
-   - Üretilen JSON'ı `adminClient` kullanarak `roadmaps` tablosuna `source: 'ai'` olarak kaydet.
-   - Görevleri `tasks` tablosuna `resource_id` referansıyla `bulk insert` et.
+   - Üretilen JSON'ı `roadmaps` tablosuna `source: 'gemini'` (veya `'ai'`) olarak kaydet.
+   - Görevleri `tasks` tablosuna `resource_id`, `estimated_hours`, `difficulty` (1-3) ve `status: 'pending'` referansıyla `bulk insert` et.
    - Kullanıcı `/dashboard` sayfasına yönlendiğinde yeni görevlerini hemen görsün.
 
 ---

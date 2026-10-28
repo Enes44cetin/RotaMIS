@@ -30,7 +30,7 @@ export function LandingNavbar({ isLoggedIn = false }: LandingNavbarProps) {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between">
         {/* Brand */}
         <Link href="/" className="flex items-center gap-3.5 group">
-          <div className="w-12 h-12 sm:w-13 sm:h-13 rounded-2xl bg-gradient-to-tr from-[#0B1F4D] via-[#162E6E] to-[#2F5BFF] flex items-center justify-center text-white shadow-md shadow-blue-900/20 group-hover:scale-105 transition-transform">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-[#0B1F4D] via-[#162E6E] to-[#2F5BFF] flex items-center justify-center text-white shadow-md shadow-blue-900/20 group-hover:scale-105 transition-transform">
             <Compass className="w-7 h-7 animate-pulse" />
           </div>
           <span className="text-2xl sm:text-[1.85rem] font-black text-[#0B1F4D] tracking-tight leading-none">

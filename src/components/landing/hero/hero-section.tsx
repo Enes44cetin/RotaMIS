@@ -92,7 +92,7 @@ export function HeroSection() {
               <div className="pt-2 flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4">
                 <Link
                   href="/register"
-                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-[#2F5BFF] hover:bg-[#1944E6] text-white font-bold px-8 py-4 rounded-xl shadow-lg shadow-blue-600/25 hover:shadow-xl hover:shadow-blue-600/35 transition-all text-base active:scale-98 group"
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-[#2F5BFF] hover:bg-[#1944E6] text-white font-bold px-8 py-4 rounded-xl shadow-lg shadow-blue-600/25 hover:shadow-xl hover:shadow-blue-600/35 transition-all text-base active:scale-[0.98] group"
                 >
                   <span>Rotamı Çiz</span>
                   <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />

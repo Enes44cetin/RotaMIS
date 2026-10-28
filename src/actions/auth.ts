@@ -3,31 +3,60 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { redirect } from "next/navigation";
+import { loginSchema, registerSchema } from "@/lib/validation/student-schemas";
 
-export async function loginAction(formData: FormData) {
-  const email = (formData.get("email") as string)?.trim();
-  const password = formData.get("password") as string;
+export interface AuthActionState {
+  error?: string | null;
+}
 
-  if (!email || !password) {
-    return { error: "Lütfen e-posta ve şifrenizi girin." };
+function extractFormData(
+  arg1: AuthActionState | FormData | null | undefined,
+  arg2?: FormData
+): FormData {
+  if (arg1 instanceof FormData) return arg1;
+  if (arg2 instanceof FormData) return arg2;
+  return new FormData();
+}
+
+export async function loginAction(
+  prevStateOrFormData: AuthActionState | FormData | null | undefined,
+  maybeFormData?: FormData
+): Promise<AuthActionState> {
+  const formData = extractFormData(prevStateOrFormData, maybeFormData);
+
+  const parsed = loginSchema.safeParse({
+    email: formData.get("email"),
+    password: formData.get("password"),
+  });
+
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message || "Lütfen e-posta ve şifrenizi girin." };
   }
 
+  const { email, password } = parsed.data;
   const supabase = await createClient();
+
   let { data, error } = await supabase.auth.signInWithPassword({
     email,
     password,
   });
 
-  // If Supabase returned "Email not confirmed", auto-confirm via adminClient and retry login
-  if (error && error.message.toLowerCase().includes("email not confirmed")) {
+  // Development-only convenience: auto-confirm if local dev project has "Confirm email" enabled
+  if (
+    process.env.NODE_ENV === "development" &&
+    error &&
+    error.message.toLowerCase().includes("email not confirmed")
+  ) {
     try {
       const adminClient = createAdminClient();
-      const { data: usersData } = await adminClient.auth.admin.listUsers();
-      const targetUser = usersData.users.find(
-        (u) => u.email?.toLowerCase() === email.toLowerCase()
-      );
-      if (targetUser) {
-        await adminClient.auth.admin.updateUserById(targetUser.id, {
+      const { data: profileRow } = await adminClient
+        .from("profiles")
+        .select("id")
+        .ilike("email", email)
+        .maybeSingle();
+
+      if (profileRow?.id) {
+        await adminClient.auth.admin.updateUserById(profileRow.id, {
           email_confirm: true,
         });
         const retry = await supabase.auth.signInWithPassword({
@@ -38,7 +67,7 @@ export async function loginAction(formData: FormData) {
         error = retry.error;
       }
     } catch (adminErr) {
-      console.warn("Auto-confirm during login failed:", adminErr);
+      console.warn("Dev auto-confirm during login failed:", adminErr);
     }
   }
 
@@ -49,7 +78,7 @@ export async function loginAction(formData: FormData) {
     if (error.message.toLowerCase().includes("email not confirmed")) {
       return {
         error:
-          "E-posta adresiniz henüz doğrulanmamış. Lütfen e-postanızı onaylayın veya Supabase panelinden 'Confirm email' ayarını kapatın.",
+          "E-posta adresiniz henüz doğrulanmamış. Lütfen gelen kutunuzdaki doğrulama bağlantısını onaylayın.",
       };
     }
     return { error: error.message || "Giriş işlemi başarısız oldu." };
@@ -77,57 +106,104 @@ export async function loginAction(formData: FormData) {
   redirect("/dashboard");
 }
 
-export async function registerAction(formData: FormData) {
-  const email = (formData.get("email") as string)?.trim();
-  const password = formData.get("password") as string;
-  const fullName = (formData.get("fullName") as string)?.trim();
-  const kvkk = formData.get("kvkk") === "on";
+export async function registerAction(
+  prevStateOrFormData: AuthActionState | FormData | null | undefined,
+  maybeFormData?: FormData
+): Promise<AuthActionState> {
+  const formData = extractFormData(prevStateOrFormData, maybeFormData);
 
-  if (!email || !password || !fullName) {
-    return { error: "Lütfen tüm zorunlu alanları doldurun." };
+  const parsed = registerSchema.safeParse({
+    fullName: formData.get("fullName"),
+    email: formData.get("email"),
+    password: formData.get("password"),
+    kvkk: formData.get("kvkk") === "on",
+  });
+
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message || "Lütfen tüm zorunlu alanları doldurun." };
   }
 
-  if (password.length < 6) {
-    return { error: "Şifreniz en az 6 karakter olmalıdır." };
+  const { email, password, fullName } = parsed.data;
+  const supabase = await createClient();
+
+  if (process.env.NODE_ENV === "development") {
+    // In development, bypass Supabase's strict 2-3 emails/hour rate limit via adminClient
+    const adminClient = createAdminClient();
+    const { error: createError } = await adminClient.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: {
+        full_name: fullName,
+        locale: "tr",
+        kvkk_accepted: "true",
+      },
+    });
+
+    if (createError) {
+      if (
+        createError.message.toLowerCase().includes("already registered") ||
+        createError.message.toLowerCase().includes("unique")
+      ) {
+        return {
+          error: "Bu e-posta adresi ile kayıtlı bir hesap zaten var. Lütfen giriş yapın.",
+        };
+      }
+      return { error: createError.message || "Kayıt işlemi sırasında bir hata oluştu." };
+    }
+
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (signInError) {
+      return {
+        error:
+          "Hesabınız oluşturuldu ancak oturum açılamadı. Lütfen Giriş Yap sayfasını deneyin.",
+      };
+    }
+
+    redirect("/onboarding");
   }
 
-  if (!kvkk) {
-    return { error: "Devam etmek için KVKK ve Aydınlatma Metnini onaylamalısınız." };
-  }
-
-  // Use adminClient to create the user directly with email_confirm: true.
-  // This completely bypasses Supabase's rate-limited default mailer (which limits to 2-3 emails/hour and throws "email rate limit exceeded").
-  const adminClient = createAdminClient();
-  const { error: createError } = await adminClient.auth.admin.createUser({
+  // Standard Production flow via Supabase Auth
+  const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
     email,
     password,
-    email_confirm: true,
-    user_metadata: {
-      full_name: fullName,
-      locale: "tr",
-      kvkk_accepted: "true",
+    options: {
+      data: {
+        full_name: fullName,
+        locale: "tr",
+        kvkk_accepted: "true",
+      },
     },
   });
 
-  if (createError) {
+  if (signUpError) {
     if (
-      createError.message.toLowerCase().includes("already registered") ||
-      createError.message.toLowerCase().includes("unique")
+      signUpError.message.toLowerCase().includes("already registered") ||
+      signUpError.message.toLowerCase().includes("unique")
     ) {
-      return { error: "Bu e-posta adresi ile kayıtlı bir hesap zaten var. Lütfen giriş yapın." };
+      return {
+        error: "Bu e-posta adresi ile kayıtlı bir hesap zaten var. Lütfen giriş yapın.",
+      };
     }
-    return { error: createError.message || "Kayıt işlemi sırasında bir hata oluştu." };
+    return { error: signUpError.message || "Kayıt işlemi sırasında bir hata oluştu." };
   }
 
-  // Immediately sign in so auth session cookies are stored in browser response
-  const supabase = await createClient();
-  const { error: signInError } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
-
-  if (signInError) {
-    return { error: "Hesabınız oluşturuldu ancak oturum açılamadı. Lütfen Giriş Yap sayfasını deneyin." };
+  // If session wasn't established automatically (e.g. email confirm disabled on server but session needs sign-in)
+  if (!signUpData.session) {
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (signInError) {
+      return {
+        error:
+          "Kaydınız alındı! Lütfen e-posta adresinize gönderilen doğrulama bağlantısını onaylayarak giriş yapın.",
+      };
+    }
   }
 
   redirect("/onboarding");

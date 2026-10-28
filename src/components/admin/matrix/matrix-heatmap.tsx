@@ -1,5 +1,7 @@
 "use client";
 
+import React from "react";
+
 interface SkillItem {
   id: string;
   name_tr: string;
@@ -157,5 +159,3 @@ export function MatrixHeatmap({
     </div>
   );
 }
-
-import React from "react";

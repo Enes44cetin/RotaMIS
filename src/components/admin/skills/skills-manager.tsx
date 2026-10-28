@@ -343,7 +343,7 @@ export function SkillsManager({ skills }: SkillsManagerProps) {
           >
             <span>{tab.label}</span>
             <span
-              className={`text-[10px] px-1.5 py-0.2 rounded-md ${
+              className={`text-[10px] px-1.5 py-0.5 rounded-md ${
                 selectedCategory === tab.key ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-500"
               }`}
             >

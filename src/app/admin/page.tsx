@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { requireAdmin } from "@/lib/auth/require-admin";
 import { createClient } from "@/lib/supabase/server";
 import { StatCard } from "@/components/admin/ui/stat-card";
 import {
@@ -11,14 +12,14 @@ import {
   ArrowRight,
   TrendingUp,
   SlidersHorizontal,
-  ExternalLink,
   GraduationCap,
 } from "lucide-react";
 
 export default async function AdminOverviewPage() {
+  await requireAdmin();
   const supabase = await createClient();
 
-  // 1. Fetch counts in parallel
+  // Fetch all counts, career paths, and skill gaps in a single parallel batch
   const [
     { count: studentCount },
     { count: completedAssessmentsCount },
@@ -26,42 +27,64 @@ export default async function AdminOverviewPage() {
     { count: activeSkillsCount },
     { count: resourcesCount },
     { count: unlistedUniCount },
+    { data: careerPaths },
+    { data: rawGaps },
   ] = await Promise.all([
-    supabase.from("profiles").select("*", { count: "exact", head: true }).eq("role", "student"),
-    supabase.from("assessments").select("*", { count: "exact", head: true }).eq("status", "completed"),
-    supabase.from("career_paths").select("*", { count: "exact", head: true }).eq("is_active", true),
-    supabase.from("skills").select("*", { count: "exact", head: true }).eq("is_active", true),
+    supabase
+      .from("profiles")
+      .select("*", { count: "exact", head: true })
+      .eq("role", "student"),
+    supabase
+      .from("assessments")
+      .select("*", { count: "exact", head: true })
+      .eq("status", "completed"),
+    supabase
+      .from("career_paths")
+      .select("*", { count: "exact", head: true })
+      .eq("is_active", true),
+    supabase
+      .from("skills")
+      .select("*", { count: "exact", head: true })
+      .eq("is_active", true),
     supabase.from("learning_resources").select("*", { count: "exact", head: true }),
-    supabase.from("profiles").select("*", { count: "exact", head: true }).not("university_other", "is", null),
+    supabase
+      .from("profiles")
+      .select("*", { count: "exact", head: true })
+      .not("university_other", "is", null),
+    supabase
+      .from("career_paths")
+      .select(
+        `
+        id,
+        name_tr,
+        slug,
+        is_active,
+        requirements:career_path_skill_requirements(count)
+      `
+      )
+      .eq("is_active", true)
+      .order("sort_order"),
+    supabase
+      .from("v_skill_gap")
+      .select("skill_slug, name_tr, gap, required_level")
+      .gt("gap", 0)
+      .limit(500),
   ]);
 
-  // 2. Fetch career paths with requirements count to detect empty matrixes
-  const { data: careerPaths } = await supabase
-    .from("career_paths")
-    .select(`
-      id,
-      name_tr,
-      slug,
-      is_active,
-      requirements:career_path_skill_requirements(count)
-    `)
-    .eq("is_active", true)
-    .order("sort_order");
-
   const pathsWithoutMatrix = (careerPaths || []).filter(
-    (p) => !p.requirements || (p.requirements as unknown as { count: number }[])[0]?.count === 0
+    (p) =>
+      !p.requirements ||
+      (p.requirements as unknown as { count: number }[])[0]?.count === 0
   );
-
-  // 3. Fetch top 5 average skill gaps across students
-  const { data: rawGaps } = await supabase
-    .from("v_skill_gap")
-    .select("skill_slug, name_tr, gap, required_level")
-    .limit(100);
 
   // Group and average gaps by skill
   const gapMap = new Map<string, { name: string; totalGap: number; count: number }>();
   (rawGaps || []).forEach((row) => {
-    const existing = gapMap.get(row.skill_slug) || { name: row.name_tr, totalGap: 0, count: 0 };
+    const existing = gapMap.get(row.skill_slug) || {
+      name: row.name_tr,
+      totalGap: 0,
+      count: 0,
+    };
     existing.totalGap += row.gap;
     existing.count += 1;
     gapMap.set(row.skill_slug, existing);
@@ -86,10 +109,12 @@ export default async function AdminOverviewPage() {
             <span>Merkezi Yönetim Konsolu</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-black tracking-tight">
-            RotaMIS Sektör & Katalog Yönetimi
+            RotaMIS Sektör &amp; Katalog Yönetimi
           </h1>
           <p className="mt-2 text-blue-100/80 text-xs sm:text-sm max-w-xl leading-relaxed">
-            Sektör beklenti matrislerini, beceri standartlarını ve öğrencilerin kişiselleştirilmiş yol haritalarına beslenen eğitim kaynaklarını buradan yönetin.
+            Sektör beklenti matrislerini, beceri standartlarını ve öğrencilerin
+            kişiselleştirilmiş yol haritalarına beslenen eğitim kaynaklarını buradan
+            yönetin.
           </p>
         </div>
 
@@ -157,7 +182,7 @@ export default async function AdminOverviewPage() {
           <div className="flex items-center justify-between">
             <h2 className="text-base font-bold text-[#0B1F4D] flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-amber-500" />
-              <span>Veri Sağlığı & Dikkat Gerektirenler</span>
+              <span>Veri Sağlığı &amp; Dikkat Gerektirenler</span>
             </h2>
             <span className="text-xs text-slate-400">Canlı Sistem Analizi</span>
           </div>
@@ -172,10 +197,13 @@ export default async function AdminOverviewPage() {
                   </div>
                   <div>
                     <h3 className="text-xs font-bold text-amber-900">
-                      {pathsWithoutMatrix.length} Kariyer Alanında Sektör Beklentisi Tanımlı Değil!
+                      {pathsWithoutMatrix.length} Kariyer Alanında Sektör Beklentisi
+                      Tanımlı Değil!
                     </h3>
                     <p className="text-xs text-amber-700/90 mt-1">
-                      {pathsWithoutMatrix.map((p) => p.name_tr).join(", ")} için henüz hiçbir beceri seviyesi atanmamış. Bu rotayı seçen öğrencilerin radar grafiği boş çıkacaktır.
+                      {pathsWithoutMatrix.map((p) => p.name_tr).join(", ")} için henüz
+                      hiçbir beceri seviyesi atanmamış. Bu rotayı seçen öğrencilerin
+                      radar grafiği boş çıkacaktır.
                     </p>
                   </div>
                 </div>
@@ -190,7 +218,10 @@ export default async function AdminOverviewPage() {
             ) : (
               <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200/60 flex items-center gap-3 text-xs text-emerald-800 font-medium">
                 <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-                <span>Tüm aktif kariyer rotalarının sektör beklenti matrisleri eksiksiz yapılandırılmış.</span>
+                <span>
+                  Tüm aktif kariyer rotalarının sektör beklenti matrisleri eksiksiz
+                  yapılandırılmış.
+                </span>
               </div>
             )}
 
@@ -203,10 +234,11 @@ export default async function AdminOverviewPage() {
                   </div>
                   <div>
                     <h3 className="text-xs font-bold text-blue-900">
-                      {unlistedUniCount} Öğrenci "Listede Yok" Üniversite Girdi
+                      {unlistedUniCount} Öğrenci &quot;Listede Yok&quot; Üniversite Girdi
                     </h3>
                     <p className="text-xs text-blue-700/90 mt-1">
-                      Öğrencilerin elle girdiği üniversiteleri inceleyip tek tıkla resmi kataloğa dahil edebilirsiniz.
+                      Öğrencilerin elle girdiği üniversiteleri inceleyip tek tıkla resmi
+                      kataloğa dahil edebilirsiniz.
                     </p>
                   </div>
                 </div>
@@ -229,10 +261,30 @@ export default async function AdminOverviewPage() {
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {[
-                { title: "Kariyer Rotaları", href: "/admin/career-paths", count: activeCareerPathsCount ?? 0, icon: Briefcase },
-                { title: "Beceri Havuzu", href: "/admin/skills", count: activeSkillsCount ?? 0, icon: Sparkles },
-                { title: "Üniversiteler", href: "/admin/universities", count: "Katalog", icon: GraduationCap },
-                { title: "Eğitim / Sertifika", href: "/admin/resources", count: resourcesCount ?? 0, icon: BookOpenCheck },
+                {
+                  title: "Kariyer Rotaları",
+                  href: "/admin/career-paths",
+                  count: activeCareerPathsCount ?? 0,
+                  icon: Briefcase,
+                },
+                {
+                  title: "Beceri Havuzu",
+                  href: "/admin/skills",
+                  count: activeSkillsCount ?? 0,
+                  icon: Sparkles,
+                },
+                {
+                  title: "Üniversiteler",
+                  href: "/admin/universities",
+                  count: "Katalog",
+                  icon: GraduationCap,
+                },
+                {
+                  title: "Eğitim / Sertifika",
+                  href: "/admin/resources",
+                  count: resourcesCount ?? 0,
+                  icon: BookOpenCheck,
+                },
               ].map((item) => {
                 const Icon = item.icon;
                 return (
@@ -241,11 +293,11 @@ export default async function AdminOverviewPage() {
                     href={item.href}
                     className="p-3.5 rounded-2xl bg-white border border-slate-200/80 hover:border-blue-400 hover:shadow-xs transition-all group flex flex-col justify-between"
                   >
-                    <div className="w-8 h-8 rounded-xl bg-slate-50 group-hover:bg-blue-50 text-slate-600 group-hover:text-blue-600 flex items-center justify-center transition-colors">
+                    <div className="w-8 h-8 rounded-xl bg-slate-50 group-hover:bg-blue-50 text-slate-600 group-hover:text-[#2F5BFF] flex items-center justify-center transition-colors">
                       <Icon className="w-4 h-4" />
                     </div>
                     <div className="mt-3">
-                      <div className="text-xs font-bold text-slate-800 group-hover:text-blue-600 transition-colors">
+                      <div className="text-xs font-bold text-slate-800 group-hover:text-[#2F5BFF] transition-colors">
                         {item.title}
                       </div>
                       <div className="text-[11px] text-slate-400 mt-0.5">
@@ -264,7 +316,7 @@ export default async function AdminOverviewPage() {
           <div>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-sm font-bold text-[#0B1F4D] flex items-center gap-2">
-                <TrendingUp className="w-4 h-4 text-blue-600" />
+                <TrendingUp className="w-4 h-4 text-[#2F5BFF]" />
                 <span>En Yüksek Beceri Açıkları</span>
               </h2>
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
@@ -273,7 +325,8 @@ export default async function AdminOverviewPage() {
             </div>
 
             <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-              Öğrencilerin check-up puanları ile sektör beklentisi arasındaki en yüksek farklar. Öncelikli olarak bu alanlara eğitim ve görev atanması önerilir.
+              Öğrencilerin check-up puanları ile sektör beklentisi arasındaki en yüksek
+              farklar. Öncelikli olarak bu alanlara eğitim ve görev atanması önerilir.
             </p>
 
             <div className="space-y-3">
@@ -298,7 +351,8 @@ export default async function AdminOverviewPage() {
                 ))
               ) : (
                 <div className="py-8 text-center text-xs text-slate-400">
-                  Yeterli check-up verisi toplandığında beceri açıkları burada listelenecektir.
+                  Yeterli check-up verisi toplandığında beceri açıkları burada
+                  listelenecektir.
                 </div>
               )}
             </div>
@@ -307,7 +361,7 @@ export default async function AdminOverviewPage() {
           <div className="mt-6 pt-4 border-t border-slate-100">
             <Link
               href="/admin/matrix"
-              className="w-full inline-flex items-center justify-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-700 p-2 rounded-xl hover:bg-blue-50 transition-colors"
+              className="w-full inline-flex items-center justify-center gap-1.5 text-xs font-bold text-[#2F5BFF] hover:text-blue-700 p-2 rounded-xl hover:bg-blue-50 transition-colors"
             >
               <span>Tüm Matrisi İncele</span>
               <ArrowRight className="w-3.5 h-3.5" />

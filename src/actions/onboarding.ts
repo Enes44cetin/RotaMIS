@@ -3,14 +3,31 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { revalidatePath } from "next/cache";
+import {
+  onboardingAssessmentSchema,
+  type OnboardingAssessmentInput,
+} from "@/lib/validation/student-schemas";
+import type { DraftAssessment } from "@/types/database";
 
 export async function getOnboardingCatalog() {
   const supabase = await createClient();
 
   const [universitiesRes, careerPathsRes, skillsRes] = await Promise.all([
-    supabase.from("universities").select("id, name, city").eq("is_active", true).order("sort_order"),
-    supabase.from("career_paths").select("id, slug, name_tr, description_tr, icon").eq("is_active", true).order("sort_order"),
-    supabase.from("skills").select("id, slug, category, name_tr, icon, sort_order").eq("is_active", true).order("sort_order"),
+    supabase
+      .from("universities")
+      .select("id, name, city")
+      .eq("is_active", true)
+      .order("sort_order"),
+    supabase
+      .from("career_paths")
+      .select("id, slug, name_tr, description_tr, icon")
+      .eq("is_active", true)
+      .order("sort_order"),
+    supabase
+      .from("skills")
+      .select("id, slug, category, name_tr, icon, sort_order")
+      .eq("is_active", true)
+      .order("sort_order"),
   ]);
 
   return {
@@ -20,43 +37,61 @@ export async function getOnboardingCatalog() {
   };
 }
 
-export async function getExistingDraftAssessment() {
+export async function getExistingDraftAssessment(
+  providedUserId?: string
+): Promise<DraftAssessment | null> {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  let userId = providedUserId;
 
-  if (!user) return null;
+  if (!userId) {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    userId = user?.id;
+  }
+
+  if (!userId) return null;
 
   // Check if user has an active draft assessment
   const { data: draft } = await supabase
     .from("assessments")
-    .select(`
-      *,
+    .select(
+      `
+      id,
+      user_id,
+      status,
+      current_step,
+      class_year,
+      career_path_id,
+      secondary_career_path_id,
+      has_internship,
+      weekly_hours,
+      learning_style,
+      target_date,
+      goals_note,
       ratings:assessment_skill_ratings(skill_id, level)
-    `)
-    .eq("user_id", user.id)
+    `
+    )
+    .eq("user_id", userId)
     .eq("status", "draft")
     .maybeSingle();
 
-  return draft;
+  return (draft as unknown as DraftAssessment) || null;
 }
 
-export async function saveOnboardingAssessment(payload: {
-  step: number;
-  classYear?: number;
-  careerPathId?: string;
-  secondaryCareerPathId?: string;
-  universityId?: string;
-  universityOther?: string;
-  hasInternship?: boolean;
-  ratings?: Record<string, number>; // skill_id -> level (1-5)
-  weeklyHours?: number;
-  learningStyle?: "video" | "reading" | "hands_on" | "mixed";
-  targetDate?: string;
-  goalsNote?: string;
-  isFinal?: boolean;
-}) {
+export async function saveOnboardingAssessment(rawPayload: OnboardingAssessmentInput) {
+  const parsed = onboardingAssessmentSchema.safeParse(rawPayload);
+  if (!parsed.success) {
+    return {
+      error: parsed.error.issues[0]?.message || "Geçersiz değerlendirme verisi gönderildi.",
+    };
+  }
+
+  const payload = parsed.data;
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
   if (!user) {
     return { error: "Oturum açmanız gerekiyor." };
@@ -122,7 +157,9 @@ export async function saveOnboardingAssessment(payload: {
 
   if (payload.classYear !== undefined) updateData.class_year = payload.classYear;
   if (payload.careerPathId !== undefined) updateData.career_path_id = payload.careerPathId;
-  if (payload.secondaryCareerPathId !== undefined) updateData.secondary_career_path_id = payload.secondaryCareerPathId;
+  if (payload.secondaryCareerPathId !== undefined) {
+    updateData.secondary_career_path_id = payload.secondaryCareerPathId;
+  }
   if (payload.hasInternship !== undefined) updateData.has_internship = payload.hasInternship;
   if (payload.weeklyHours !== undefined) updateData.weekly_hours = payload.weeklyHours;
   if (payload.learningStyle !== undefined) updateData.learning_style = payload.learningStyle;
@@ -142,7 +179,7 @@ export async function saveOnboardingAssessment(payload: {
     return { error: "Kayıt güncellenirken hata: " + updateError.message };
   }
 
-  // 4. If this was the final submission, trigger mock roadmap generation via admin client
+  // 4. If this was the final submission, trigger initial roadmap generation via admin client
   if (payload.isFinal) {
     try {
       let finalCareerPathId = payload.careerPathId;
@@ -168,14 +205,15 @@ export async function saveOnboardingAssessment(payload: {
 }
 
 // Generates the initial roadmap with 4 weeks of structured tasks
-async function generateInitialRoadmap(userId: string, assessmentId: string, careerPathId: string) {
+async function generateInitialRoadmap(
+  userId: string,
+  assessmentId: string,
+  careerPathId: string
+) {
   const adminClient = createAdminClient();
 
   // Deactivate any existing active roadmaps
-  await adminClient
-    .from("roadmaps")
-    .update({ is_active: false })
-    .eq("user_id", userId);
+  await adminClient.from("roadmaps").update({ is_active: false }).eq("user_id", userId);
 
   // Create new roadmap
   const { data: roadmap, error: roadmapError } = await adminClient
@@ -185,7 +223,8 @@ async function generateInitialRoadmap(userId: string, assessmentId: string, care
       assessment_id: assessmentId,
       career_path_id: careerPathId,
       title: "Hedef Odaklı Kişisel Kariyer Yol Haritası",
-      summary: "Beceri check-up sonuçlarına göre eksiklerini kapatman ve sektöre hazır hale gelmen için oluşturulan 4 haftalık gelişim planı.",
+      summary:
+        "Beceri check-up sonuçlarına göre eksiklerini kapatman ve sektöre hazır hale gelmen için oluşturulan 4 haftalık gelişim planı.",
       source: "mock",
     })
     .select("id")
@@ -193,32 +232,35 @@ async function generateInitialRoadmap(userId: string, assessmentId: string, care
 
   if (roadmapError || !roadmap) return;
 
-  // 1. Fetch student's skill gaps to customize tasks
-  const { data: gaps } = await adminClient
-    .from("v_skill_gap")
-    .select("skill_id, skill_slug, name_tr, gap, required_level, student_level")
-    .eq("user_id", userId)
-    .order("gap", { ascending: false });
-
-  // 2. Fetch active published learning resources with their skill associations
-  const { data: catalogResources } = await adminClient
-    .from("learning_resources")
-    .select(`
-      id,
-      title,
-      description,
-      url,
-      resource_type,
-      estimated_hours,
-      difficulty,
-      resource_skills (
-        skill_id,
-        min_level,
-        target_level
+  // 1. Fetch student's skill gaps & published resources in parallel
+  const [{ data: gaps }, { data: catalogResources }] = await Promise.all([
+    adminClient
+      .from("v_skill_gap")
+      .select("skill_id, skill_slug, name_tr, gap, required_level, current_level, importance")
+      .eq("user_id", userId)
+      .order("gap", { ascending: false })
+      .order("importance", { ascending: false }),
+    adminClient
+      .from("learning_resources")
+      .select(
+        `
+        id,
+        title,
+        description,
+        url,
+        resource_type,
+        estimated_hours,
+        difficulty,
+        resource_skills (
+          skill_id,
+          min_level,
+          target_level
+        )
+      `
       )
-    `)
-    .eq("status", "published")
-    .order("sort_order");
+      .eq("status", "published")
+      .order("sort_order"),
+  ]);
 
   const tasksToInsert = [];
   const usedResourceIds = new Set<string>();
@@ -233,7 +275,12 @@ async function generateInitialRoadmap(userId: string, assessmentId: string, care
       // Find matching resource for this skill
       const match = catalogResources.find((r) => {
         if (usedResourceIds.has(r.id)) return false;
-        const links = (r.resource_skills as unknown as { skill_id: string; min_level: number; target_level: number }[]) || [];
+        const links =
+          (r.resource_skills as unknown as {
+            skill_id: string;
+            min_level: number;
+            target_level: number;
+          }[]) || [];
         return links.some((l) => l.skill_id === gap.skill_id);
       });
 
@@ -249,7 +296,9 @@ async function generateInitialRoadmap(userId: string, assessmentId: string, care
           skill_id: gap.skill_id,
           resource_id: match.id,
           title: match.title,
-          description: match.description || `${gap.name_tr} yetkinliğini geliştirmek için önerilen içerik.`,
+          description:
+            match.description ||
+            `${gap.name_tr} yetkinliğini geliştirmek için önerilen içerik.`,
           resource_url: match.url,
           resource_type: match.resource_type,
           estimated_hours: hours,
@@ -276,7 +325,8 @@ async function generateInitialRoadmap(userId: string, assessmentId: string, care
             user_id: userId,
             resource_id: r.id,
             title: r.title,
-            description: r.description || "Temel bilişim ve analitik yetkinlikleri pekiştirme modülü.",
+            description:
+              r.description || "Temel bilişim ve analitik yetkinlikleri pekiştirme modülü.",
             resource_url: r.url,
             resource_type: r.resource_type,
             estimated_hours: hours,
@@ -297,7 +347,8 @@ async function generateInitialRoadmap(userId: string, assessmentId: string, care
       roadmap_id: roadmap.id,
       user_id: userId,
       title: "SQL Window Functions ve CTE Egzersizleri",
-      description: "SQLBolt modüllerinde ROW_NUMBER(), RANK() ve WITH sorguları ile pratik yap.",
+      description:
+        "SQLBolt modüllerinde ROW_NUMBER(), RANK() ve WITH sorguları ile pratik yap.",
       resource_url: "https://sqlbolt.com/",
       resource_type: "practice" as const,
       estimated_hours: 4.5,

@@ -3,8 +3,35 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { createClient } from "@/lib/supabase/server";
-import { resourceSchema, type ResourceFormData } from "@/lib/validation/admin-schemas";
+import {
+  resourceSchema,
+  uuidSchema,
+  type ResourceFormData,
+} from "@/lib/validation/admin-schemas";
 import { logAdminAction } from "@/lib/admin/audit";
+
+function isSafeExternalUrl(rawUrl: string): boolean {
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+    const host = parsed.hostname.toLowerCase();
+    if (
+      host === "localhost" ||
+      host === "127.0.0.1" ||
+      host === "0.0.0.0" ||
+      host === "::1" ||
+      host.startsWith("169.254.") ||
+      host.startsWith("10.") ||
+      host.startsWith("192.168.") ||
+      /^172\.(1[6-9]|2\d|3[0-1])\./.test(host)
+    ) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export async function createResourceAction(data: ResourceFormData) {
   try {
@@ -70,6 +97,7 @@ export async function createResourceAction(data: ResourceFormData) {
 export async function updateResourceAction(id: string, data: ResourceFormData) {
   try {
     const session = await requireAdmin();
+    const validId = uuidSchema.parse(id);
     const validated = resourceSchema.parse(data);
 
     const supabase = await createClient();
@@ -92,16 +120,16 @@ export async function updateResourceAction(id: string, data: ResourceFormData) {
         status: validated.status,
         sort_order: validated.sort_order,
       })
-      .eq("id", id);
+      .eq("id", validId);
 
     if (error) return { success: false, error: error.message };
 
     // 2. Re-sync skill links
-    await supabase.from("resource_skills").delete().eq("resource_id", id);
+    await supabase.from("resource_skills").delete().eq("resource_id", validId);
 
     if (validated.skills && validated.skills.length > 0) {
       const skillLinks = validated.skills.map((s) => ({
-        resource_id: id,
+        resource_id: validId,
         skill_id: s.skill_id,
         min_level: s.min_level,
         target_level: s.target_level,
@@ -113,7 +141,7 @@ export async function updateResourceAction(id: string, data: ResourceFormData) {
     await logAdminAction({
       action: "update_resource",
       entityType: "resource",
-      entityId: id,
+      entityId: validId,
       details: { title: validated.title },
       adminId: session.user.id,
     });
@@ -132,19 +160,20 @@ export async function toggleStatusResourceAction(
 ) {
   try {
     const session = await requireAdmin();
+    const validId = uuidSchema.parse(id);
     const supabase = await createClient();
 
     const { error } = await supabase
       .from("learning_resources")
       .update({ status })
-      .eq("id", id);
+      .eq("id", validId);
 
     if (error) return { success: false, error: error.message };
 
     await logAdminAction({
       action: `set_resource_${status}`,
       entityType: "resource",
-      entityId: id,
+      entityId: validId,
       adminId: session.user.id,
     });
 
@@ -159,15 +188,19 @@ export async function toggleStatusResourceAction(
 export async function deleteResourceAction(id: string) {
   try {
     const session = await requireAdmin();
+    const validId = uuidSchema.parse(id);
     const supabase = await createClient();
 
-    const { error } = await supabase.from("learning_resources").delete().eq("id", id);
+    const { error } = await supabase
+      .from("learning_resources")
+      .delete()
+      .eq("id", validId);
     if (error) return { success: false, error: error.message };
 
     await logAdminAction({
       action: "delete_resource",
       entityType: "resource",
-      entityId: id,
+      entityId: validId,
       adminId: session.user.id,
     });
 
@@ -180,7 +213,7 @@ export async function deleteResourceAction(id: string) {
 }
 
 /**
- * Checks URL availability of all active learning resources
+ * Checks URL availability of all active learning resources in parallel batches
  */
 export async function checkResourceLinksAction() {
   try {
@@ -198,51 +231,62 @@ export async function checkResourceLinksAction() {
 
     let okCount = 0;
     let brokenCount = 0;
+    const nowIso = new Date().toISOString();
 
-    for (const res of resources) {
-      let isOk = false;
-      try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 6000);
+    // Process in concurrent batches of 6 to avoid long sequential timeouts
+    const BATCH_SIZE = 6;
+    for (let i = 0; i < resources.length; i += BATCH_SIZE) {
+      const batch = resources.slice(i, i + BATCH_SIZE);
 
-        const response = await fetch(res.url, {
-          method: "HEAD",
-          headers: { "User-Agent": "RotaMIS-Bot/1.0" },
-          signal: controller.signal,
-        });
-        clearTimeout(timeout);
+      await Promise.allSettled(
+        batch.map(async (res) => {
+          let isOk = false;
 
-        // Accept 2xx and 3xx as OK
-        isOk = response.status >= 200 && response.status < 400;
+          if (isSafeExternalUrl(res.url)) {
+            try {
+              const response = await fetch(res.url, {
+                method: "HEAD",
+                headers: { "User-Agent": "RotaMIS-Bot/1.0" },
+                signal: AbortSignal.timeout(5000),
+              });
 
-        // If 405 Method Not Allowed, retry with GET
-        if (response.status === 405) {
-          const getRes = await fetch(res.url, {
-            method: "GET",
-            headers: { "User-Agent": "RotaMIS-Bot/1.0" },
-            signal: AbortSignal.timeout(5000),
-          });
-          isOk = getRes.status >= 200 && getRes.status < 400;
-        }
-      } catch {
-        isOk = false;
-      }
+              isOk = response.status >= 200 && response.status < 400;
 
-      const status = isOk ? "ok" : "broken";
-      if (isOk) okCount++;
-      else brokenCount++;
+              if (response.status === 405 || response.status === 403) {
+                const getRes = await fetch(res.url, {
+                  method: "GET",
+                  headers: { "User-Agent": "RotaMIS-Bot/1.0" },
+                  signal: AbortSignal.timeout(5000),
+                });
+                isOk = getRes.status >= 200 && getRes.status < 400;
+              }
+            } catch {
+              isOk = false;
+            }
+          }
 
-      await supabase
-        .from("learning_resources")
-        .update({
-          link_status: status,
-          last_checked_at: new Date().toISOString(),
+          const status = isOk ? "ok" : "broken";
+          if (isOk) okCount++;
+          else brokenCount++;
+
+          await supabase
+            .from("learning_resources")
+            .update({
+              link_status: status,
+              last_checked_at: nowIso,
+            })
+            .eq("id", res.id);
         })
-        .eq("id", res.id);
+      );
     }
 
     revalidatePath("/admin/resources");
-    return { success: true, total: resources.length, ok: okCount, broken: brokenCount };
+    return {
+      success: true,
+      total: resources.length,
+      ok: okCount,
+      broken: brokenCount,
+    };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Link kontrolü başarısız oldu";
     return { success: false, error: msg };

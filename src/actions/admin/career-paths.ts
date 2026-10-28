@@ -3,7 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { createClient } from "@/lib/supabase/server";
-import { careerPathSchema, type CareerPathFormData } from "@/lib/validation/admin-schemas";
+import {
+  careerPathSchema,
+  uuidSchema,
+  type CareerPathFormData,
+} from "@/lib/validation/admin-schemas";
 import { logAdminAction } from "@/lib/admin/audit";
 
 export async function createCareerPathAction(data: CareerPathFormData) {
@@ -34,7 +38,10 @@ export async function createCareerPathAction(data: CareerPathFormData) {
 
     if (error) {
       if (error.code === "23505") {
-        return { success: false, error: "Bu slug (URL adı) ile kayıtlı bir kariyer alanı zaten var." };
+        return {
+          success: false,
+          error: "Bu slug (URL adı) ile kayıtlı bir kariyer alanı zaten var.",
+        };
       }
       return { success: false, error: error.message };
     }
@@ -61,6 +68,7 @@ export async function createCareerPathAction(data: CareerPathFormData) {
 export async function updateCareerPathAction(id: string, data: CareerPathFormData) {
   try {
     const session = await requireAdmin();
+    const validId = uuidSchema.parse(id);
     const validated = careerPathSchema.parse(data);
 
     const name_en = validated.name_en?.trim() || validated.name_tr;
@@ -80,7 +88,7 @@ export async function updateCareerPathAction(id: string, data: CareerPathFormDat
         sort_order: validated.sort_order,
         is_active: validated.is_active,
       })
-      .eq("id", id);
+      .eq("id", validId);
 
     if (error) {
       return { success: false, error: error.message };
@@ -89,7 +97,7 @@ export async function updateCareerPathAction(id: string, data: CareerPathFormDat
     await logAdminAction({
       action: "update_career_path",
       entityType: "career_path",
-      entityId: id,
+      entityId: validId,
       details: { name: validated.name_tr },
       adminId: session.user.id,
     });
@@ -108,19 +116,20 @@ export async function updateCareerPathAction(id: string, data: CareerPathFormDat
 export async function toggleActiveCareerPathAction(id: string, is_active: boolean) {
   try {
     const session = await requireAdmin();
+    const validId = uuidSchema.parse(id);
     const supabase = await createClient();
 
     const { error } = await supabase
       .from("career_paths")
-      .update({ is_active })
-      .eq("id", id);
+      .update({ is_active: Boolean(is_active) })
+      .eq("id", validId);
 
     if (error) return { success: false, error: error.message };
 
     await logAdminAction({
       action: is_active ? "activate_career_path" : "archive_career_path",
       entityType: "career_path",
-      entityId: id,
+      entityId: validId,
       adminId: session.user.id,
     });
 
@@ -136,13 +145,14 @@ export async function toggleActiveCareerPathAction(id: string, is_active: boolea
 export async function deleteCareerPathAction(id: string) {
   try {
     const session = await requireAdmin();
+    const validId = uuidSchema.parse(id);
     const supabase = await createClient();
 
-    // Check if any students or assessments are using it
+    // Check if any students are using it
     const { count: studentCount } = await supabase
       .from("profiles")
       .select("*", { count: "exact", head: true })
-      .eq("target_career_path_id", id);
+      .eq("target_career_path_id", validId);
 
     if (studentCount && studentCount > 0) {
       return {
@@ -151,13 +161,13 @@ export async function deleteCareerPathAction(id: string) {
       };
     }
 
-    const { error } = await supabase.from("career_paths").delete().eq("id", id);
+    const { error } = await supabase.from("career_paths").delete().eq("id", validId);
     if (error) return { success: false, error: error.message };
 
     await logAdminAction({
       action: "delete_career_path",
       entityType: "career_path",
-      entityId: id,
+      entityId: validId,
       adminId: session.user.id,
     });
 

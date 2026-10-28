@@ -5,96 +5,111 @@ import { signOutAction } from "@/actions/auth";
 import { SkillRadar } from "@/components/charts/skill-radar";
 import { ReadinessCards } from "@/components/dashboard/readiness-cards";
 import { TaskChecklist } from "@/components/dashboard/task-checklist";
+import type {
+  SkillGapRow,
+  CategoryScoreRow,
+  TaskRow,
+  UserBadgeWithDetails,
+} from "@/types/database";
 import {
   Compass,
   Award,
   Flame,
   LogOut,
-  Target,
-  Sparkles,
-  BarChart3,
-  CheckCircle2,
   RefreshCw,
   GraduationCap,
   Briefcase,
-  ShieldAlert,
 } from "lucide-react";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
   if (!user) {
     redirect("/login");
   }
 
-  // 1. Fetch user profile
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select(`
-      id,
-      full_name,
-      email,
-      role,
-      university_other,
-      total_xp,
-      current_streak,
-      longest_streak,
-      onboarding_completed,
-      university:universities(name),
-      target_career:career_paths!profiles_target_career_path_id_fkey(name_tr, icon)
-    `)
-    .eq("id", user.id)
-    .single();
+  // 1. Fetch profile and dashboard datasets in parallel (Zero Waterfall)
+  const [
+    { data: profile },
+    { data: rawSkillGaps },
+    { data: rawCategoryScores },
+    { data: activeRoadmap },
+    { data: rawUserBadges },
+  ] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select(
+        `
+        id,
+        full_name,
+        email,
+        role,
+        university_other,
+        total_xp,
+        current_streak,
+        longest_streak,
+        onboarding_completed,
+        university:universities(name),
+        target_career:career_paths!profiles_target_career_path_id_fkey(name_tr, icon)
+      `
+      )
+      .eq("id", user.id)
+      .single(),
+    supabase
+      .from("v_skill_gap")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("gap", { ascending: false }),
+    supabase
+      .from("v_category_scores")
+      .select("*")
+      .eq("user_id", user.id),
+    supabase
+      .from("roadmaps")
+      .select(
+        `
+        id,
+        title,
+        summary,
+        tasks(*)
+      `
+      )
+      .eq("user_id", user.id)
+      .eq("is_active", true)
+      .maybeSingle(),
+    supabase
+      .from("user_badges")
+      .select(
+        `
+        earned_at,
+        badge:badges(id, name_tr, description_tr, icon)
+      `
+      )
+      .eq("user_id", user.id),
+  ]);
 
   // If user hasn't done onboarding yet, redirect them to onboarding wizard
   if (!profile || !profile.onboarding_completed) {
     redirect("/onboarding");
   }
 
-  // 2. Fetch skill gap data from view
-  const { data: skillGaps } = await supabase
-    .from("v_skill_gap")
-    .select("*")
-    .eq("user_id", user.id)
-    .order("gap", { ascending: false });
+  const skillGaps = (rawSkillGaps as unknown as SkillGapRow[]) || [];
+  const categoryScores = (rawCategoryScores as unknown as CategoryScoreRow[]) || [];
+  const userBadges = (rawUserBadges as unknown as UserBadgeWithDetails[]) || [];
 
-  // 3. Fetch category readiness scores
-  const { data: categoryScores } = await supabase
-    .from("v_category_scores")
-    .select("*")
-    .eq("user_id", user.id);
-
-  // 4. Fetch active roadmap and tasks
-  const { data: activeRoadmap } = await supabase
-    .from("roadmaps")
-    .select(`
-      id,
-      title,
-      summary,
-      tasks(*)
-    `)
-    .eq("user_id", user.id)
-    .eq("is_active", true)
-    .maybeSingle();
-
-  // 5. Fetch earned badges
-  const { data: userBadges } = await supabase
-    .from("user_badges")
-    .select(`
-      earned_at,
-      badge:badges(id, name_tr, description_tr, icon)
-    `)
-    .eq("user_id", user.id);
-
-  const tasks = (activeRoadmap?.tasks || []).sort(
-    (a: any, b: any) => (a.week_number || 0) - (b.week_number || 0) || a.sort_order - b.sort_order
+  const rawTasks = (activeRoadmap?.tasks as unknown as TaskRow[]) || [];
+  const tasks = [...rawTasks].sort(
+    (a, b) =>
+      (a.week_number || 0) - (b.week_number || 0) || a.sort_order - b.sort_order
   );
 
-  const completedTasksCount = tasks.filter((t: any) => t.status === "completed").length;
-  const overallReadiness = categoryScores?.length
+  const completedTasksCount = tasks.filter((t) => t.status === "completed").length;
+  const overallReadiness = categoryScores.length
     ? Math.round(
-        categoryScores.reduce((acc: number, c: any) => acc + (c.readiness_pct || 0), 0) /
+        categoryScores.reduce((acc, c) => acc + (c.readiness_pct || 0), 0) /
           categoryScores.length
       )
     : 0;
@@ -102,43 +117,53 @@ export default async function DashboardPage() {
   // Calculate user level (Level 1 at 0 XP, Level 2 at 100 XP, Level 3 at 250 XP...)
   const userLevel = Math.floor(Math.sqrt((profile.total_xp || 0) / 40)) + 1;
 
-  const universityName = (profile.university as any)?.name || profile.university_other || "Belirtilmemiş";
-  const careerName = (profile.target_career as any)?.name_tr || "Kariyer Alanı Seçilmedi";
+  const universityRel = profile.university as unknown as { name: string } | null;
+  const targetCareerRel = profile.target_career as unknown as {
+    name_tr: string;
+    icon: string | null;
+  } | null;
+
+  const universityName =
+    universityRel?.name || profile.university_other || "Belirtilmemiş";
+  const careerName = targetCareerRel?.name_tr || "Kariyer Alanı Seçilmedi";
 
   return (
     <div className="min-h-screen bg-[#F7F9FC] flex flex-col">
       {/* Top Navbar */}
       <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-slate-200/80">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link href="/" className="flex items-center gap-3 group">
-              <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-gradient-to-tr from-[#0B1F4D] to-[#2F5BFF] flex items-center justify-center text-white shadow-md shadow-blue-900/20 group-hover:scale-105 transition-transform">
-                <Compass className="w-6 h-6" />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-3 min-w-0">
+            <Link href="/" className="flex items-center gap-2.5 sm:gap-3 group shrink-0">
+              <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-gradient-to-tr from-[#0B1F4D] to-[#2F5BFF] flex items-center justify-center text-white shadow-md shadow-blue-900/20 group-hover:scale-105 transition-transform">
+                <Compass className="w-5 h-5 sm:w-6 sm:h-6" />
               </div>
-              <span className="text-2xl font-black text-[#0B1F4D] tracking-tight leading-none">
+              <span className="text-xl sm:text-2xl font-black text-[#0B1F4D] tracking-tight leading-none">
                 Rota<span className="text-[#2F5BFF]">MIS</span>
               </span>
             </Link>
 
-            <div className="hidden sm:flex items-center gap-1.5 ml-4 pl-4 border-l border-slate-200 text-xs text-slate-500 font-medium">
-              <Briefcase className="w-3.5 h-3.5 text-blue-600" />
-              <span className="font-bold text-slate-800">{careerName}</span>
+            <div className="hidden sm:flex items-center gap-1.5 ml-4 pl-4 border-l border-slate-200 text-xs text-slate-500 font-medium truncate">
+              <Briefcase className="w-3.5 h-3.5 text-[#2F5BFF] shrink-0" />
+              <span className="font-bold text-slate-800 truncate">{careerName}</span>
             </div>
           </div>
 
           {/* Gamification Stats & User Pill */}
-          <div className="flex items-center gap-3 sm:gap-4">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             {/* Daily Streak */}
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50 border border-amber-200/80 text-amber-900 text-xs font-bold">
-              <Flame className="w-4 h-4 text-amber-500 fill-amber-500" />
-              <span>{profile.current_streak || 0} Gün Seri</span>
+            <div className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full bg-amber-50 border border-amber-200/80 text-amber-900 text-xs font-bold">
+              <Flame className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-500 fill-amber-500 shrink-0" />
+              <span>
+                {profile.current_streak || 0}
+                <span className="hidden xs:inline sm:inline"> Gün Seri</span>
+              </span>
             </div>
 
             {/* Total XP & Level */}
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-50 border border-blue-200/80 text-blue-900 text-xs font-bold">
-              <Award className="w-4 h-4 text-blue-600" />
+            <div className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full bg-blue-50 border border-blue-200/80 text-blue-900 text-xs font-bold">
+              <Award className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#2F5BFF] shrink-0" />
               <span>{profile.total_xp || 0} XP</span>
-              <span className="bg-blue-600 text-white text-[10px] px-1.5 py-0.2 rounded-md ml-0.5">
+              <span className="bg-[#2F5BFF] text-white text-[10px] px-1.5 py-0.5 rounded-md ml-0.5">
                 Lvl {userLevel}
               </span>
             </div>
@@ -172,7 +197,10 @@ export default async function DashboardPage() {
               Hoş Geldin, {profile.full_name || "Öğrenci"} 🚀
             </h1>
             <p className="mt-2 text-sm text-blue-100/80 max-w-xl">
-              Hedefin olan <strong className="text-white font-bold">{careerName}</strong> pozisyonu için hazırlık seviyen %{overallReadiness}. Eksiklerini kapatmak için haftalık görevlerini tamamlamaya başla.
+              Hedefin olan{" "}
+              <strong className="text-white font-bold">{careerName}</strong> pozisyonu
+              için hazırlık seviyen %{overallReadiness}. Eksiklerini kapatmak için
+              haftalık görevlerini tamamlamaya başla.
             </p>
           </div>
 
@@ -193,7 +221,7 @@ export default async function DashboardPage() {
             <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">
               Hazırlık Oranı
             </div>
-            <div className="mt-2 text-2xl sm:text-3xl font-black text-blue-600">
+            <div className="mt-2 text-2xl sm:text-3xl font-black text-[#2F5BFF]">
               %{overallReadiness}
             </div>
             <div className="mt-1 text-[11px] text-slate-400">Sektör beklentisine göre</div>
@@ -204,9 +232,12 @@ export default async function DashboardPage() {
               Tamamlanan Görev
             </div>
             <div className="mt-2 text-2xl sm:text-3xl font-black text-slate-900">
-              {completedTasksCount} <span className="text-sm font-semibold text-slate-400">/ {tasks.length}</span>
+              {completedTasksCount}{" "}
+              <span className="text-sm font-semibold text-slate-400">/ {tasks.length}</span>
             </div>
-            <div className="mt-1 text-[11px] text-emerald-600 font-medium">Haftalık plan aktif</div>
+            <div className="mt-1 text-[11px] text-emerald-600 font-medium">
+              Haftalık plan aktif
+            </div>
           </div>
 
           <div className="p-5 rounded-2xl bg-white border border-slate-200/80 shadow-xs">
@@ -216,7 +247,9 @@ export default async function DashboardPage() {
             <div className="mt-2 text-2xl sm:text-3xl font-black text-amber-600">
               {profile.total_xp || 0}
             </div>
-            <div className="mt-1 text-[11px] text-slate-400">Seviye {userLevel} Kariyer Avcısı</div>
+            <div className="mt-1 text-[11px] text-slate-400">
+              Seviye {userLevel} Kariyer Avcısı
+            </div>
           </div>
 
           <div className="p-5 rounded-2xl bg-white border border-slate-200/80 shadow-xs">
@@ -224,7 +257,7 @@ export default async function DashboardPage() {
               Kazanılan Rozetler
             </div>
             <div className="mt-2 text-2xl sm:text-3xl font-black text-indigo-600">
-              {userBadges?.length || 0}
+              {userBadges.length}
             </div>
             <div className="mt-1 text-[11px] text-slate-400">Kariyer başarıları</div>
           </div>
@@ -249,16 +282,13 @@ export default async function DashboardPage() {
             </div>
 
             <div className="flex-1 flex items-center justify-center">
-              <SkillRadar data={skillGaps || []} />
+              <SkillRadar data={skillGaps} />
             </div>
           </div>
 
           {/* Readiness & Top Gaps (40%) */}
           <div className="lg:col-span-5">
-            <ReadinessCards
-              categoryScores={categoryScores || []}
-              topGaps={skillGaps || []}
-            />
+            <ReadinessCards categoryScores={categoryScores} topGaps={skillGaps} />
           </div>
         </div>
 
@@ -279,15 +309,15 @@ export default async function DashboardPage() {
               Check-up doldurarak ve görevleri bitirerek rozet koleksiyonunu genişlet.
             </p>
 
-            {(!userBadges || userBadges.length === 0) ? (
+            {userBadges.length === 0 ? (
               <div className="text-center py-10 text-xs text-slate-400">
                 Henüz kazanılmış rozetin yok. Görevleri tamamlamaya devam et!
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-3">
-                {userBadges.map((ub: any, idx: number) => (
+                {userBadges.map((ub, idx) => (
                   <div
-                    key={idx}
+                    key={ub.badge?.id || idx}
                     className="p-3.5 rounded-2xl bg-amber-50/60 border border-amber-200/80 flex flex-col items-center text-center"
                   >
                     <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold text-lg mb-2">

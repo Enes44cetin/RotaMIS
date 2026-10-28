@@ -3,7 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { createClient } from "@/lib/supabase/server";
-import { skillSchema, type SkillFormData } from "@/lib/validation/admin-schemas";
+import {
+  skillSchema,
+  uuidSchema,
+  type SkillFormData,
+} from "@/lib/validation/admin-schemas";
 import { logAdminAction } from "@/lib/admin/audit";
 
 export async function createSkillAction(data: SkillFormData) {
@@ -61,6 +65,7 @@ export async function createSkillAction(data: SkillFormData) {
 export async function updateSkillAction(id: string, data: SkillFormData) {
   try {
     const session = await requireAdmin();
+    const validId = uuidSchema.parse(id);
     const validated = skillSchema.parse(data);
 
     const name_en = validated.name_en?.trim() || validated.name_tr;
@@ -81,14 +86,14 @@ export async function updateSkillAction(id: string, data: SkillFormData) {
         sort_order: validated.sort_order,
         is_active: validated.is_active,
       })
-      .eq("id", id);
+      .eq("id", validId);
 
     if (error) return { success: false, error: error.message };
 
     await logAdminAction({
       action: "update_skill",
       entityType: "skill",
-      entityId: id,
+      entityId: validId,
       details: { name: validated.name_tr },
       adminId: session.user.id,
     });
@@ -107,19 +112,20 @@ export async function updateSkillAction(id: string, data: SkillFormData) {
 export async function toggleActiveSkillAction(id: string, is_active: boolean) {
   try {
     const session = await requireAdmin();
+    const validId = uuidSchema.parse(id);
     const supabase = await createClient();
 
     const { error } = await supabase
       .from("skills")
-      .update({ is_active })
-      .eq("id", id);
+      .update({ is_active: Boolean(is_active) })
+      .eq("id", validId);
 
     if (error) return { success: false, error: error.message };
 
     await logAdminAction({
       action: is_active ? "activate_skill" : "archive_skill",
       entityType: "skill",
-      entityId: id,
+      entityId: validId,
       adminId: session.user.id,
     });
 
@@ -135,28 +141,37 @@ export async function toggleActiveSkillAction(id: string, is_active: boolean) {
 export async function deleteSkillAction(id: string) {
   try {
     const session = await requireAdmin();
+    const validId = uuidSchema.parse(id);
     const supabase = await createClient();
 
     // Check if used in assessment ratings or requirements
     const [{ count: ratingCount }, { count: reqCount }] = await Promise.all([
-      supabase.from("assessment_skill_ratings").select("*", { count: "exact", head: true }).eq("skill_id", id),
-      supabase.from("career_path_skill_requirements").select("*", { count: "exact", head: true }).eq("skill_id", id),
+      supabase
+        .from("assessment_skill_ratings")
+        .select("*", { count: "exact", head: true })
+        .eq("skill_id", validId),
+      supabase
+        .from("career_path_skill_requirements")
+        .select("*", { count: "exact", head: true })
+        .eq("skill_id", validId),
     ]);
 
     if ((ratingCount && ratingCount > 0) || (reqCount && reqCount > 0)) {
       return {
         success: false,
-        error: `Bu beceri ${ratingCount || 0} öğrenci check-up'ında puanlanmış ve ${reqCount || 0} sektör matrisinde tanımlı. Öğrenci verilerinin kaybolmaması için kalıcı silinemez. Lütfen "Arşive Al" butonunu kullanın.`,
+        error: `Bu beceri ${ratingCount || 0} öğrenci check-up'ında puanlanmış ve ${
+          reqCount || 0
+        } sektör matrisinde tanımlı. Öğrenci verilerinin kaybolmaması için kalıcı silinemez. Lütfen "Arşive Al" butonunu kullanın.`,
       };
     }
 
-    const { error } = await supabase.from("skills").delete().eq("id", id);
+    const { error } = await supabase.from("skills").delete().eq("id", validId);
     if (error) return { success: false, error: error.message };
 
     await logAdminAction({
       action: "delete_skill",
       entityType: "skill",
-      entityId: id,
+      entityId: validId,
       adminId: session.user.id,
     });
 

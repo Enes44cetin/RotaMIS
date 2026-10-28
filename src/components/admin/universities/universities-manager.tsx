@@ -356,7 +356,7 @@ export function UniversitiesManager({ universities, unlistedEntries }: Universit
           <Inbox className="w-4 h-4" />
           <span>"Listede Yok" Gelen Kutusu</span>
           {unlisted.length > 0 && (
-            <span className="px-1.5 py-0.2 rounded-md bg-amber-400 text-amber-950 text-[10px] font-black">
+            <span className="px-1.5 py-0.5 rounded-md bg-amber-400 text-amber-950 text-[10px] font-black">
               {unlisted.length}
             </span>
           )}

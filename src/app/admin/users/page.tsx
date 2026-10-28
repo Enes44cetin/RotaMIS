@@ -1,17 +1,23 @@
 import { Metadata } from "next";
+import { requireAdmin } from "@/lib/auth/require-admin";
 import { createClient } from "@/lib/supabase/server";
-import { StudentsTable, type StudentItem } from "@/components/admin/users/students-table";
+import {
+  StudentsTable,
+  type StudentItem,
+} from "@/components/admin/users/students-table";
 
 export const metadata: Metadata = {
   title: "Öğrenci Yönetimi — Admin Konsolu",
 };
 
 export default async function AdminUsersPage() {
+  await requireAdmin();
   const supabase = await createClient();
 
   const { data: rawProfiles } = await supabase
     .from("profiles")
-    .select(`
+    .select(
+      `
       id,
       email,
       full_name,
@@ -22,13 +28,16 @@ export default async function AdminUsersPage() {
       created_at,
       university:universities(name),
       target_career:career_paths!profiles_target_career_path_id_fkey(name_tr)
-    `)
+    `
+    )
     .eq("role", "student")
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .limit(500);
 
   const students: StudentItem[] = (rawProfiles || []).map((p) => {
     const uni = (p.university as unknown as { name: string } | null)?.name;
-    const career = (p.target_career as unknown as { name_tr: string } | null)?.name_tr;
+    const career = (p.target_career as unknown as { name_tr: string } | null)
+      ?.name_tr;
 
     return {
       id: p.id,
@@ -46,9 +55,12 @@ export default async function AdminUsersPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-bold text-[#0B1F4D]">Kayıtlı Öğrenciler ({students.length})</h1>
+        <h1 className="text-xl font-bold text-[#0B1F4D]">
+          Kayıtlı Öğrenciler ({students.length})
+        </h1>
         <p className="text-xs text-slate-500 mt-0.5">
-          Sisteme kayıt olmuş YBS öğrencilerinin hedef kariyer alanları, check-up durumları ve puanları.
+          Sisteme kayıt olmuş YBS öğrencilerinin hedef kariyer alanları, check-up
+          durumları ve puanları.
         </p>
       </div>
 

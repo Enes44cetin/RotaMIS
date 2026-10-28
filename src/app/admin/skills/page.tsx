@@ -1,18 +1,23 @@
 import { Metadata } from "next";
+import { requireAdmin } from "@/lib/auth/require-admin";
 import { createClient } from "@/lib/supabase/server";
-import { SkillsManager, type SkillItem } from "@/components/admin/skills/skills-manager";
+import {
+  SkillsManager,
+  type SkillItem,
+} from "@/components/admin/skills/skills-manager";
 
 export const metadata: Metadata = {
   title: "Beceri Havuzu Kataloğu — Admin Konsolu",
 };
 
 export default async function AdminSkillsPage() {
+  await requireAdmin();
   const supabase = await createClient();
 
-  // 1. Fetch skills
   const { data: rawSkills } = await supabase
     .from("skills")
-    .select(`
+    .select(
+      `
       id,
       name_tr,
       name_en,
@@ -24,7 +29,8 @@ export default async function AdminSkillsPage() {
       sort_order,
       careerReqs:career_path_skill_requirements(count),
       assessmentRatings:assessment_skill_ratings(count)
-    `)
+    `
+    )
     .order("sort_order");
 
   const skills: SkillItem[] = (rawSkills || []).map((s) => ({
@@ -37,8 +43,10 @@ export default async function AdminSkillsPage() {
     icon: s.icon,
     is_active: s.is_active,
     sort_order: s.sort_order,
-    careerUsageCount: (s.careerReqs as unknown as { count: number }[])?.[0]?.count ?? 0,
-    assessmentUsageCount: (s.assessmentRatings as unknown as { count: number }[])?.[0]?.count ?? 0,
+    careerUsageCount:
+      (s.careerReqs as unknown as { count: number }[])?.[0]?.count ?? 0,
+    assessmentUsageCount:
+      (s.assessmentRatings as unknown as { count: number }[])?.[0]?.count ?? 0,
   }));
 
   return (
@@ -46,7 +54,8 @@ export default async function AdminSkillsPage() {
       <div>
         <h1 className="text-xl font-bold text-[#0B1F4D]">Beceri Havuzu Kataloğu</h1>
         <p className="text-xs text-slate-500 mt-0.5">
-          YBS müfredatı ve sektör beklentilerine yönelik sert ve yumuşak beceri standartlarını yönetin.
+          YBS müfredatı ve sektör beklentilerine yönelik sert ve yumuşak beceri
+          standartlarını yönetin.
         </p>
       </div>
 

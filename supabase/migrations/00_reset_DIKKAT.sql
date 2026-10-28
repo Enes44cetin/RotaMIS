@@ -11,6 +11,9 @@ drop view if exists public.v_category_scores    cascade;
 drop view if exists public.v_skill_gap          cascade;
 drop view if exists public.v_latest_assessment  cascade;
 
+drop table if exists public.admin_audit_log                cascade;
+drop table if exists public.resource_skills                cascade;
+drop table if exists public.learning_resources             cascade;
 drop table if exists public.xp_events                      cascade;
 drop table if exists public.user_badges                    cascade;
 drop table if exists public.badges                         cascade;
@@ -24,6 +27,7 @@ drop table if exists public.profiles                       cascade;
 drop table if exists public.career_paths                   cascade;
 drop table if exists public.universities                   cascade;
 
+drop function if exists public.save_requirement_matrix(uuid, jsonb) cascade;
 drop function if exists public.assessments_after_complete()  cascade;
 drop function if exists public.assessments_before_update()   cascade;
 drop function if exists public.tasks_after_status_change()   cascade;
