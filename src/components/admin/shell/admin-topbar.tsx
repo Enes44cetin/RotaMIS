@@ -2,7 +2,8 @@
 
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { Menu, ShieldCheck, ExternalLink } from "lucide-react";
+import { Menu, ShieldCheck, ExternalLink, LogOut } from "lucide-react";
+import { signOutAction } from "@/actions/auth";
 
 interface AdminTopbarProps {
   adminEmail: string;
@@ -68,6 +69,18 @@ export function AdminTopbar({ adminEmail, adminName, onOpenSidebar }: AdminTopba
               Yönetici
             </div>
           </div>
+
+          <form action={signOutAction} className="ml-1">
+            <button
+              type="submit"
+              title="Çıkış Yap"
+              aria-label="Çıkış Yap"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-500 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-100 transition-colors cursor-pointer"
+            >
+              <LogOut className="w-4 h-4" />
+              <span className="hidden md:inline">Çıkış</span>
+            </button>
+          </form>
         </div>
       </div>
     </header>

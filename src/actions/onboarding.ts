@@ -7,6 +7,7 @@ import {
   onboardingAssessmentSchema,
   type OnboardingAssessmentInput,
 } from "@/lib/validation/student-schemas";
+import { createNextSprintForUser } from "@/actions/journey";
 import type { DraftAssessment } from "@/types/database";
 
 export async function getOnboardingCatalog() {
@@ -204,7 +205,7 @@ export async function saveOnboardingAssessment(rawPayload: OnboardingAssessmentI
   return { success: true, assessmentId: assessment.id };
 }
 
-// Generates the initial roadmap with 4 weeks of structured tasks
+// Generates the permanent career journey roadmap and initializes Sprint 1
 async function generateInitialRoadmap(
   userId: string,
   assessmentId: string,
@@ -212,19 +213,19 @@ async function generateInitialRoadmap(
 ) {
   const adminClient = createAdminClient();
 
-  // Deactivate any existing active roadmaps
+  // Deactivate any existing active roadmaps (only when initial onboarding or explicit career change finishes)
   await adminClient.from("roadmaps").update({ is_active: false }).eq("user_id", userId);
 
-  // Create new roadmap
+  // Create new permanent Journey roadmap
   const { data: roadmap, error: roadmapError } = await adminClient
     .from("roadmaps")
     .insert({
       user_id: userId,
       assessment_id: assessmentId,
       career_path_id: careerPathId,
-      title: "Hedef Odaklı Kişisel Kariyer Yol Haritası",
+      title: "Hedef Odaklı Kişisel Kariyer Yolculuğu",
       summary:
-        "Beceri check-up sonuçlarına göre eksiklerini kapatman ve sektöre hazır hale gelmen için oluşturulan 4 haftalık gelişim planı.",
+        "Beceri check-up sonuçlarına göre kendi hızında ilerleyebileceğin, eksiklerini kapattıkça yeni sprintlerle uzayan gelişim patikası.",
       source: "mock",
     })
     .select("id")
@@ -232,133 +233,5 @@ async function generateInitialRoadmap(
 
   if (roadmapError || !roadmap) return;
 
-  // 1. Fetch student's skill gaps & published resources in parallel
-  const [{ data: gaps }, { data: catalogResources }] = await Promise.all([
-    adminClient
-      .from("v_skill_gap")
-      .select("skill_id, skill_slug, name_tr, gap, required_level, current_level, importance")
-      .eq("user_id", userId)
-      .order("gap", { ascending: false })
-      .order("importance", { ascending: false }),
-    adminClient
-      .from("learning_resources")
-      .select(
-        `
-        id,
-        title,
-        description,
-        url,
-        resource_type,
-        estimated_hours,
-        difficulty,
-        resource_skills (
-          skill_id,
-          min_level,
-          target_level
-        )
-      `
-      )
-      .eq("status", "published")
-      .order("sort_order"),
-  ]);
-
-  const tasksToInsert = [];
-  const usedResourceIds = new Set<string>();
-
-  // Match resources against student's largest gaps first
-  const activeGaps = (gaps || []).filter((g) => g.gap > 0);
-
-  if (catalogResources && catalogResources.length > 0) {
-    for (const gap of activeGaps) {
-      if (tasksToInsert.length >= 6) break;
-
-      // Find matching resource for this skill
-      const match = catalogResources.find((r) => {
-        if (usedResourceIds.has(r.id)) return false;
-        const links =
-          (r.resource_skills as unknown as {
-            skill_id: string;
-            min_level: number;
-            target_level: number;
-          }[]) || [];
-        return links.some((l) => l.skill_id === gap.skill_id);
-      });
-
-      if (match) {
-        usedResourceIds.add(match.id);
-        const week = Math.min(4, Math.floor(tasksToInsert.length / 2) + 1);
-        const hours = Number(match.estimated_hours) || 4.0;
-        const xp = Math.min(100, Math.round(hours * 7 + match.difficulty * 5));
-
-        tasksToInsert.push({
-          roadmap_id: roadmap.id,
-          user_id: userId,
-          skill_id: gap.skill_id,
-          resource_id: match.id,
-          title: match.title,
-          description:
-            match.description ||
-            `${gap.name_tr} yetkinliğini geliştirmek için önerilen içerik.`,
-          resource_url: match.url,
-          resource_type: match.resource_type,
-          estimated_hours: hours,
-          difficulty: match.difficulty,
-          xp_reward: xp,
-          week_number: week,
-          sort_order: tasksToInsert.length + 1,
-          status: "pending" as const,
-        });
-      }
-    }
-
-    // If student has fewer than 4 tasks from gaps, fill with general published resources
-    if (tasksToInsert.length < 4) {
-      for (const r of catalogResources) {
-        if (tasksToInsert.length >= 4) break;
-        if (!usedResourceIds.has(r.id)) {
-          usedResourceIds.add(r.id);
-          const week = Math.min(4, Math.floor(tasksToInsert.length / 2) + 1);
-          const hours = Number(r.estimated_hours) || 3.0;
-
-          tasksToInsert.push({
-            roadmap_id: roadmap.id,
-            user_id: userId,
-            resource_id: r.id,
-            title: r.title,
-            description:
-              r.description || "Temel bilişim ve analitik yetkinlikleri pekiştirme modülü.",
-            resource_url: r.url,
-            resource_type: r.resource_type,
-            estimated_hours: hours,
-            difficulty: r.difficulty,
-            xp_reward: Math.round(hours * 7 + r.difficulty * 5),
-            week_number: week,
-            sort_order: tasksToInsert.length + 1,
-            status: "pending" as const,
-          });
-        }
-      }
-    }
-  }
-
-  // Safe fallback if catalog is currently empty
-  if (tasksToInsert.length === 0) {
-    tasksToInsert.push({
-      roadmap_id: roadmap.id,
-      user_id: userId,
-      title: "SQL Window Functions ve CTE Egzersizleri",
-      description:
-        "SQLBolt modüllerinde ROW_NUMBER(), RANK() ve WITH sorguları ile pratik yap.",
-      resource_url: "https://sqlbolt.com/",
-      resource_type: "practice" as const,
-      estimated_hours: 4.5,
-      difficulty: 2,
-      xp_reward: 35,
-      week_number: 1,
-      sort_order: 1,
-      status: "pending" as const,
-    });
-  }
-
-  await adminClient.from("tasks").insert(tasksToInsert);
+  await createNextSprintForUser(userId, roadmap.id);
 }

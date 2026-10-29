@@ -46,3 +46,28 @@ export const toggleTaskStatusSchema = z.object({
   currentStatus: z.enum(["pending", "in_progress", "completed", "skipped"]),
 });
 
+export const markTaskInProgressSchema = z.object({
+  taskId: z.string().uuid("Geçersiz görev kimliği."),
+});
+
+export const miniCheckupSchema = z.object({
+  sprintId: z.string().uuid("Geçersiz sprint kimliği."),
+  ratings: z
+    .array(
+      z.object({
+        skillId: z.string().uuid("Geçersiz beceri kimliği."),
+        level: z.coerce
+          .number()
+          .int()
+          .min(1, "Puan en az 1 olmalıdır.")
+          .max(5, "Puan en fazla 5 olabilir."),
+      })
+    )
+    .min(1, "En az bir beceriyi puanlamalısınız.")
+    .max(12, "Tek seferde en fazla 12 beceri puanlanabilir."),
+});
+
+export type MiniCheckupInput = z.infer<typeof miniCheckupSchema>;
+
+
+

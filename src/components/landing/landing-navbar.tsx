@@ -2,13 +2,17 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Compass, ArrowRight, User } from "lucide-react";
+import { Compass, ArrowRight, User, Shield } from "lucide-react";
 
 interface LandingNavbarProps {
   isLoggedIn?: boolean;
+  isAdmin?: boolean;
 }
 
-export function LandingNavbar({ isLoggedIn = false }: LandingNavbarProps) {
+export function LandingNavbar({
+  isLoggedIn = false,
+  isAdmin = false,
+}: LandingNavbarProps) {
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
@@ -58,11 +62,15 @@ export function LandingNavbar({ isLoggedIn = false }: LandingNavbarProps) {
         <div className="flex items-center gap-3">
           {isLoggedIn ? (
             <Link
-              href="/dashboard"
+              href={isAdmin ? "/admin" : "/dashboard"}
               className="inline-flex items-center gap-1.5 text-sm font-bold bg-[#0B1F4D] hover:bg-slate-900 text-white px-4 py-2.5 rounded-xl shadow-xs transition-all active:scale-95"
             >
-              <User className="w-4 h-4 text-[#2F5BFF]" />
-              <span>Panelime Git</span>
+              {isAdmin ? (
+                <Shield className="w-4 h-4 text-blue-300" />
+              ) : (
+                <User className="w-4 h-4 text-[#2F5BFF]" />
+              )}
+              <span>{isAdmin ? "Admin Konsolu" : "Panelime Git"}</span>
               <ArrowRight className="w-4 h-4" />
             </Link>
           ) : (

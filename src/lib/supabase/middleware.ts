@@ -45,15 +45,22 @@ export async function updateSession(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     if (isAdminRoute) {
-      url.searchParams.set("redirect", "/admin");
+      url.searchParams.set("redirect", pathname);
     }
     return NextResponse.redirect(url);
   }
 
   if (user && isAuthRoute) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/dashboard";
-    return NextResponse.redirect(url);
+    const allowAccountSwitch =
+      request.nextUrl.searchParams.get("reason") === "not_admin" ||
+      request.nextUrl.searchParams.get("switch") === "1";
+
+    if (!allowAccountSwitch) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/dashboard";
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
   }
 
   return supabaseResponse;

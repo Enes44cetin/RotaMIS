@@ -22,22 +22,26 @@ export default async function AdminOverviewPage() {
   // Fetch all counts, career paths, and skill gaps in a single parallel batch
   const [
     { count: studentCount },
-    { count: completedAssessmentsCount },
+    { data: adminProfiles },
+    { data: rawCompletedAssessments },
     { count: activeCareerPathsCount },
     { count: activeSkillsCount },
     { count: resourcesCount },
     { count: unlistedUniCount },
     { data: careerPaths },
     { data: rawGaps },
+    { data: rawCatalogDemands },
   ] = await Promise.all([
     supabase
       .from("profiles")
       .select("*", { count: "exact", head: true })
       .eq("role", "student"),
+    supabase.from("profiles").select("id").eq("role", "admin"),
     supabase
       .from("assessments")
-      .select("*", { count: "exact", head: true })
-      .eq("status", "completed"),
+      .select("id, user_id")
+      .eq("status", "completed")
+      .limit(2000),
     supabase
       .from("career_paths")
       .select("*", { count: "exact", head: true })
@@ -50,6 +54,7 @@ export default async function AdminOverviewPage() {
     supabase
       .from("profiles")
       .select("*", { count: "exact", head: true })
+      .eq("role", "student")
       .not("university_other", "is", null),
     supabase
       .from("career_paths")
@@ -66,10 +71,42 @@ export default async function AdminOverviewPage() {
       .order("sort_order"),
     supabase
       .from("v_skill_gap")
-      .select("skill_slug, name_tr, gap, required_level")
+      .select("user_id, skill_slug, name_tr, gap, required_level")
       .gt("gap", 0)
       .limit(500),
+    supabase
+      .from("catalog_demand")
+      .select(
+        `
+        id,
+        user_id,
+        skill:skills(name_tr)
+      `
+      )
+      .eq("resolved", false)
+      .limit(100),
   ]);
+
+  // Exclude admin accounts (e.g. dual student-turned-admin accounts) from student analytics
+  const adminUserIds = new Set((adminProfiles || []).map((a) => a.id));
+  const completedAssessmentsCount = (rawCompletedAssessments || []).filter(
+    (a) => !adminUserIds.has(a.user_id)
+  ).length;
+  const studentGaps = (rawGaps || []).filter((g) => !adminUserIds.has(g.user_id));
+  const studentCatalogDemands = (
+    (rawCatalogDemands || []) as unknown as Array<{
+      user_id: string;
+      skill: { name_tr: string } | null;
+    }>
+  ).filter((d) => !adminUserIds.has(d.user_id));
+
+  const demandSkillNames = Array.from(
+    new Set(
+      studentCatalogDemands
+        .map((d) => d.skill?.name_tr)
+        .filter((n): n is string => Boolean(n))
+    )
+  );
 
   const pathsWithoutMatrix = (careerPaths || []).filter(
     (p) =>
@@ -77,9 +114,9 @@ export default async function AdminOverviewPage() {
       (p.requirements as unknown as { count: number }[])[0]?.count === 0
   );
 
-  // Group and average gaps by skill
+  // Group and average gaps by skill (students only)
   const gapMap = new Map<string, { name: string; totalGap: number; count: number }>();
-  (rawGaps || []).forEach((row) => {
+  studentGaps.forEach((row) => {
     const existing = gapMap.get(row.skill_slug) || {
       name: row.name_tr,
       totalGap: 0,
@@ -222,6 +259,35 @@ export default async function AdminOverviewPage() {
                   Tüm aktif kariyer rotalarının sektör beklenti matrisleri eksiksiz
                   yapılandırılmış.
                 </span>
+              </div>
+            )}
+
+            {/* Alert: Catalog demand / coverage exhaustion */}
+            {demandSkillNames.length > 0 && (
+              <div className="p-4 rounded-2xl bg-rose-50/80 border border-rose-200/80 flex items-start justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0 mt-0.5">
+                    <BookOpenCheck className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-bold text-rose-900">
+                      Katalog Kapsam Uyarısı: Yeni İçerik Bekleyen Öğrenciler Var!
+                    </h3>
+                    <p className="text-xs text-rose-700/90 mt-1">
+                      Bazı öğrenciler{" "}
+                      <strong>{demandSkillNames.slice(0, 4).join(", ")}</strong>{" "}
+                      becerilerindeki tüm mevcut kaynakları tüketti. Sonsuz patikanın
+                      kesintisiz sürmesi için yeni onaylı kaynaklar ekleyin.
+                    </p>
+                  </div>
+                </div>
+
+                <Link
+                  href="/admin/resources"
+                  className="px-3 py-1.5 rounded-lg bg-rose-600 text-white font-bold text-xs hover:bg-rose-700 shrink-0 transition-colors"
+                >
+                  Kaynak Ekle
+                </Link>
               </div>
             )}
 

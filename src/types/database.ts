@@ -1,8 +1,11 @@
 export type UserRole = "student" | "admin";
 export type SkillCategory = "technical" | "business" | "soft";
 export type AssessmentStatus = "draft" | "completed";
+export type AssessmentKind = "full" | "mini";
 export type LearningStyle = "video" | "reading" | "hands_on" | "mixed";
 export type TaskStatus = "pending" | "in_progress" | "completed" | "skipped";
+export type SprintKind = "standard" | "checkpoint";
+export type SprintStatus = "active" | "completed";
 export type TaskResourceType =
   | "course"
   | "article"
@@ -11,7 +14,7 @@ export type TaskResourceType =
   | "certification"
   | "practice"
   | "other";
-export type RoadmapSource = "mock" | "gemini" | "admin";
+export type RoadmapSource = "mock" | "gemini" | "admin" | "ai";
 
 export interface SkillGapRow {
   user_id: string;
@@ -38,9 +41,16 @@ export interface CategoryScoreRow {
   readiness_pct: number;
 }
 
+export interface TaskSkillSummary {
+  id: string;
+  name_tr: string;
+  category: SkillCategory;
+}
+
 export interface TaskRow {
   id: string;
   roadmap_id: string;
+  sprint_id?: string | null;
   user_id: string;
   skill_id: string | null;
   resource_id?: string | null;
@@ -55,6 +65,22 @@ export interface TaskRow {
   sort_order: number;
   status: TaskStatus;
   completed_at: string | null;
+  skill?: TaskSkillSummary | null;
+}
+
+export interface SprintRow {
+  id: string;
+  roadmap_id: string;
+  user_id: string;
+  sprint_number: number;
+  kind: SprintKind;
+  status: SprintStatus;
+  source_assessment_id: string | null;
+  matcher_version: string;
+  focus_skill_ids: string[];
+  started_at: string;
+  completed_at: string | null;
+  tasks?: TaskRow[];
 }
 
 export interface DraftAssessmentRating {
@@ -88,3 +114,53 @@ export interface UserBadgeWithDetails {
   } | null;
 }
 
+export interface BadgeCatalogItem {
+  id: string;
+  slug: string;
+  name_tr: string;
+  description_tr: string | null;
+  icon: string | null;
+  criteria_type:
+    | "tasks_completed"
+    | "xp_total"
+    | "streak_days"
+    | "assessments_completed";
+  criteria_value: number;
+  xp_bonus: number;
+  sort_order: number;
+}
+
+export interface SprintUnit {
+  id: string;
+  sprintNumber: number;
+  cycleNumber: number;
+  kind: SprintKind;
+  status: SprintStatus;
+  title: string;
+  subtitle: string;
+  theme: "royal" | "indigo" | "emerald" | "amber";
+  tasks: TaskRow[];
+  completedCount: number;
+  totalXp: number;
+  earnedXp: number;
+  focusSkills: TaskSkillSummary[];
+  allTasksDone: boolean;
+  isSealed: boolean;
+  miniCheckupCompleted: boolean;
+  recommendedTaskId: string | null;
+}
+
+export interface MiniCheckupSkillDelta {
+  skillId: string;
+  nameTr: string;
+  previousLevel: number;
+  newLevel: number;
+  requiredLevel: number;
+}
+
+export interface MiniCheckupSubmitResult {
+  ok: boolean;
+  error?: string;
+  xpAwarded?: number;
+  deltas?: MiniCheckupSkillDelta[];
+}

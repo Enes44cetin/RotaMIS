@@ -11,11 +11,10 @@ import {
   RefreshCw,
   Award,
   Sparkles,
-  CheckCircle2,
-  AlertCircle,
   X,
   Clock,
-  Layers,
+  Eye,
+  Star,
 } from "lucide-react";
 import { DataTable, type Column } from "@/components/admin/ui/data-table";
 import { FormDrawer } from "@/components/admin/ui/form-drawer";
@@ -24,7 +23,6 @@ import { StatusBadge } from "@/components/admin/ui/status-badge";
 import {
   createResourceAction,
   updateResourceAction,
-  toggleStatusResourceAction,
   deleteResourceAction,
   checkResourceLinksAction,
 } from "@/actions/admin/resources";
@@ -52,6 +50,7 @@ export interface ResourceItem {
   pricing: "free" | "freemium" | "paid";
   estimated_hours: number;
   difficulty: number;
+  xp_reward: number | null;
   gives_certificate: boolean;
   certificate_info: string | null;
   description: string | null;
@@ -67,13 +66,42 @@ interface ResourcesManagerProps {
   availableSkills: SkillRef[];
 }
 
+function calculatePreviewXp(
+  customXpRaw: string,
+  hours: number,
+  difficulty: number
+): { xp: number; isCustom: boolean } {
+  const parsed = Number(customXpRaw);
+  if (customXpRaw.trim() !== "" && !Number.isNaN(parsed) && parsed >= 10) {
+    return { xp: Math.min(500, Math.round(parsed)), isCustom: true };
+  }
+  return {
+    xp: Math.min(100, Math.max(15, Math.round((hours || 3.5) * 7 + (difficulty || 1) * 5))),
+    isCustom: false,
+  };
+}
+
+const DIFFICULTY_LABELS: Record<number, { label: string; style: string }> = {
+  1: {
+    label: "Başlangıç Düzeyi",
+    style: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  },
+  2: {
+    label: "Orta Seviye",
+    style: "bg-amber-50 text-amber-800 border-amber-200",
+  },
+  3: {
+    label: "İleri Düzey",
+    style: "bg-purple-50 text-purple-800 border-purple-200",
+  },
+};
+
 export function ResourcesManager({ resources, availableSkills }: ResourcesManagerProps) {
   const router = useRouter();
   const [items, setItems] = useState<ResourceItem[]>(resources);
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [isCheckingLinks, setIsCheckingLinks] = useState(false);
 
-  // Sync state if server props change
   useEffect(() => {
     setItems(resources);
   }, [resources]);
@@ -92,8 +120,9 @@ export function ResourcesManager({ resources, availableSkills }: ResourcesManage
   >("course");
   const [language, setLanguage] = useState<"tr" | "en" | "mixed">("tr");
   const [pricing, setPricing] = useState<"free" | "freemium" | "paid">("free");
-  const [estimatedHours, setEstimatedHours] = useState(4.0);
+  const [estimatedHours, setEstimatedHours] = useState(3.5);
   const [difficulty, setDifficulty] = useState(1);
+  const [customXp, setCustomXp] = useState("");
   const [givesCertificate, setGivesCertificate] = useState(false);
   const [certificateInfo, setCertificateInfo] = useState("");
   const [description, setDescription] = useState("");
@@ -113,7 +142,10 @@ export function ResourcesManager({ resources, availableSkills }: ResourcesManage
   const [pickerTargetLevel, setPickerTargetLevel] = useState(3);
 
   // Confirm delete dialog
-  const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; item: ResourceItem | null }>({
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    isOpen: boolean;
+    item: ResourceItem | null;
+  }>({
     isOpen: false,
     item: null,
   });
@@ -132,8 +164,9 @@ export function ResourcesManager({ resources, availableSkills }: ResourcesManage
     setResourceType("course");
     setLanguage("tr");
     setPricing("free");
-    setEstimatedHours(4.0);
+    setEstimatedHours(3.0);
     setDifficulty(1);
+    setCustomXp("");
     setGivesCertificate(false);
     setCertificateInfo("");
     setDescription("");
@@ -155,7 +188,8 @@ export function ResourcesManager({ resources, availableSkills }: ResourcesManage
     setLanguage(item.language);
     setPricing(item.pricing);
     setEstimatedHours(item.estimated_hours);
-    setDifficulty(item.difficulty);
+    setDifficulty(item.difficulty || 1);
+    setCustomXp(item.xp_reward !== null && item.xp_reward !== undefined ? String(item.xp_reward) : "");
     setGivesCertificate(item.gives_certificate);
     setCertificateInfo(item.certificate_info || "");
     setDescription(item.description || "");
@@ -196,7 +230,14 @@ export function ResourcesManager({ resources, availableSkills }: ResourcesManage
 
   const handleSubmit = async () => {
     if (!title.trim() || !provider.trim() || !url.trim()) {
-      toast.error("Lütfen başlık, sağlayıcı ve geçerli bir URL giriniz.");
+      toast.error("Lütfen görev başlığı, sağlayıcı ve geçerli bir URL giriniz.");
+      return;
+    }
+
+    const parsedXp =
+      customXp.trim() === "" ? null : Math.round(Number(customXp));
+    if (parsedXp !== null && (Number.isNaN(parsedXp) || parsedXp < 10 || parsedXp > 500)) {
+      toast.error("Özel XP ödülü boş bırakılmalı veya 10 ile 500 arasında bir sayı olmalıdır.");
       return;
     }
 
@@ -212,6 +253,7 @@ export function ResourcesManager({ resources, availableSkills }: ResourcesManage
       pricing,
       estimated_hours: estimatedHours,
       difficulty,
+      xp_reward: parsedXp,
       gives_certificate: givesCertificate,
       certificate_info: certificateInfo,
       description,
@@ -231,7 +273,8 @@ export function ResourcesManager({ resources, availableSkills }: ResourcesManage
                   ...payload,
                   skills: selectedSkills.map((sk) => ({
                     skill_id: sk.skill_id,
-                    skill_name: availableSkills.find((s) => s.id === sk.skill_id)?.name_tr || "",
+                    skill_name:
+                      availableSkills.find((s) => s.id === sk.skill_id)?.name_tr || "",
                     min_level: sk.min_level,
                     target_level: sk.target_level,
                   })),
@@ -254,7 +297,8 @@ export function ResourcesManager({ resources, availableSkills }: ResourcesManage
             link_status: "unknown" as const,
             skills: selectedSkills.map((sk) => ({
               skill_id: sk.skill_id,
-              skill_name: availableSkills.find((s) => s.id === sk.skill_id)?.name_tr || "",
+              skill_name:
+                availableSkills.find((s) => s.id === sk.skill_id)?.name_tr || "",
               min_level: sk.min_level,
               target_level: sk.target_level,
             })),
@@ -266,7 +310,11 @@ export function ResourcesManager({ resources, availableSkills }: ResourcesManage
     setIsSubmitting(false);
 
     if (res.success) {
-      toast.success(editingItem ? "Kaynak güncellendi!" : "Yeni kaynak kataloğa eklendi!");
+      toast.success(
+        editingItem
+          ? "Görev güncellendi ve öğrenci patikalarına yansıtıldı!"
+          : "Yeni görev kataloğa eklendi!"
+      );
       setDrawerOpen(false);
     } else {
       toast.error(res.error || "İşlem başarısız.");
@@ -298,9 +346,8 @@ export function ResourcesManager({ resources, availableSkills }: ResourcesManage
     const targetId = deleteConfirm.item.id;
     setDeleteConfirm({ isOpen: false, item: null });
 
-    // Optimistic delete: instant UI response (0ms)
     setItems((prev) => prev.filter((r) => r.id !== targetId));
-    toast.success("Kaynak katalogdan silindi.");
+    toast.success("Görev katalogdan silindi.");
 
     const res = await deleteResourceAction(targetId);
     if (!res.success) {
@@ -310,13 +357,13 @@ export function ResourcesManager({ resources, availableSkills }: ResourcesManage
   };
 
   const typeLabels: Record<string, string> = {
-    course: "Kurs",
-    article: "Makale / Doküman",
-    video: "Video Serisi",
+    course: "Eğitim / Kurs",
+    article: "Makale / Rehber",
+    video: "Video İçerik",
     project: "Uygulamalı Proje",
-    certification: "Sertifika Sınavı",
-    practice: "Pratik / Egzersiz",
-    other: "Diğer",
+    certification: "Sertifika Programı",
+    practice: "İnteraktif Pratik",
+    other: "Öğrenme Görevi",
   };
 
   const pricingLabels = {
@@ -325,16 +372,18 @@ export function ResourcesManager({ resources, availableSkills }: ResourcesManage
     paid: { label: "Ücretli", style: "bg-slate-100 text-slate-700 border-slate-200" },
   };
 
+  const previewXpInfo = calculatePreviewXp(customXp, estimatedHours, difficulty);
+
   const columns: Column<ResourceItem>[] = [
     {
       key: "title",
-      header: "Kaynak & Sağlayıcı",
+      header: "Görev Başlığı & Yönerge Özeti",
       render: (item) => (
-        <div className="flex items-start gap-3 max-w-xs">
+        <div className="flex items-start gap-3 max-w-sm">
           <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 mt-0.5">
             <BookOpenCheck className="w-4 h-4" />
           </div>
-          <div>
+          <div className="min-w-0">
             <a
               href={item.url}
               target="_blank"
@@ -342,14 +391,19 @@ export function ResourcesManager({ resources, availableSkills }: ResourcesManage
               className="font-bold text-slate-800 hover:text-blue-600 text-xs inline-flex items-center gap-1 group"
             >
               <span>{item.title}</span>
-              <ExternalLink className="w-3 h-3 text-slate-400 group-hover:text-blue-600 transition-colors" />
+              <ExternalLink className="w-3 h-3 text-slate-400 group-hover:text-blue-600 transition-colors shrink-0" />
             </a>
-            <div className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-2">
+            {item.description && (
+              <p className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
+                {item.description}
+              </p>
+            )}
+            <div className="text-[11px] text-slate-400 mt-1 flex items-center gap-2">
               <span className="font-semibold text-slate-600">{item.provider}</span>
               <span>•</span>
               <span className="uppercase">{item.language}</span>
               <span>•</span>
-              <span>{item.estimated_hours}s</span>
+              <span>~{item.estimated_hours}s</span>
             </div>
           </div>
         </div>
@@ -357,24 +411,45 @@ export function ResourcesManager({ resources, availableSkills }: ResourcesManage
     },
     {
       key: "resource_type",
-      header: "Tür & Ücret",
+      header: "Tür, Zorluk & XP",
       render: (item) => {
         const pr = pricingLabels[item.pricing];
+        const diffMeta = DIFFICULTY_LABELS[item.difficulty] || DIFFICULTY_LABELS[1];
+        const xpVal =
+          item.xp_reward ??
+          Math.min(
+            100,
+            Math.max(15, Math.round((item.estimated_hours || 3.5) * 7 + (item.difficulty || 1) * 5))
+          );
+
         return (
           <div className="space-y-1">
             <div className="font-semibold text-slate-700 text-xs">
               {typeLabels[item.resource_type] || item.resource_type}
             </div>
-            <span className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-bold border ${pr.style}`}>
-              {pr.label}
-            </span>
+            <div className="flex flex-wrap items-center gap-1">
+              <span
+                className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-bold border ${diffMeta.style}`}
+              >
+                {diffMeta.label}
+              </span>
+              <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-amber-50 text-amber-800 border border-amber-200">
+                <Award className="w-2.5 h-2.5 text-amber-500" />
+                +{xpVal} XP
+              </span>
+              <span
+                className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-bold border ${pr.style}`}
+              >
+                {pr.label}
+              </span>
+            </div>
           </div>
         );
       },
     },
     {
       key: "skills",
-      header: "Hedef Beceriler",
+      header: "Eşleştiği Beceriler",
       render: (item) => (
         <div className="flex flex-wrap gap-1 max-w-xs">
           {item.skills.length > 0 ? (
@@ -384,7 +459,9 @@ export function ResourcesManager({ resources, availableSkills }: ResourcesManage
                 className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-50 border border-blue-200/60 text-blue-800 text-[10px] font-bold"
               >
                 <span>{s.skill_name}</span>
-                <span className="text-blue-500 font-mono">({s.min_level}→{s.target_level})</span>
+                <span className="text-blue-500 font-mono">
+                  ({s.min_level}→{s.target_level})
+                </span>
               </span>
             ))
           ) : (
@@ -394,29 +471,14 @@ export function ResourcesManager({ resources, availableSkills }: ResourcesManage
       ),
     },
     {
-      key: "gives_certificate",
-      header: "Sertifika",
-      align: "center",
-      render: (item) => (
-        item.gives_certificate ? (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-bold">
-            <Award className="w-3 h-3 text-amber-600" />
-            <span>Var</span>
-          </span>
-        ) : (
-          <span className="text-slate-400 text-xs">—</span>
-        )
-      ),
-    },
-    {
       key: "link_status",
-      header: "Link Durumu",
+      header: "Link",
       align: "center",
       render: (item) => <StatusBadge status={item.link_status} />,
     },
     {
       key: "status",
-      header: "Yayın Durumu",
+      header: "Durum",
       align: "center",
       render: (item) => <StatusBadge status={item.status} />,
     },
@@ -428,15 +490,15 @@ export function ResourcesManager({ resources, availableSkills }: ResourcesManage
         <div className="flex items-center justify-end gap-1">
           <button
             onClick={() => openEditDrawer(item)}
-            title="Düzenle"
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 hover:bg-slate-100 transition-colors"
+            title="Görevi Düzenle"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
           >
             <Pencil className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={() => setDeleteConfirm({ isOpen: true, item })}
             title="Sil"
-            className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>
@@ -449,13 +511,24 @@ export function ResourcesManager({ resources, availableSkills }: ResourcesManage
     <div className="space-y-6">
       {/* Top action row */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        {/* Status filter tabs */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1">
           {[
-            { key: "all", label: "Tüm Kaynaklar", count: items.length },
-            { key: "published", label: "Yayında", count: items.filter((r) => r.status === "published").length },
-            { key: "draft", label: "Taslak", count: items.filter((r) => r.status === "draft").length },
-            { key: "archived", label: "Arşiv", count: items.filter((r) => r.status === "archived").length },
+            { key: "all", label: "Tüm Görevler", count: items.length },
+            {
+              key: "published",
+              label: "Yayında (Aktif Havuz)",
+              count: items.filter((r) => r.status === "published").length,
+            },
+            {
+              key: "draft",
+              label: "Taslak",
+              count: items.filter((r) => r.status === "draft").length,
+            },
+            {
+              key: "archived",
+              label: "Arşiv",
+              count: items.filter((r) => r.status === "archived").length,
+            },
             {
               key: "broken",
               label: "Kırık Linkler",
@@ -477,7 +550,9 @@ export function ResourcesManager({ resources, availableSkills }: ResourcesManage
               <span>{tab.label}</span>
               <span
                 className={`text-[10px] px-1.5 py-0.5 rounded-md ${
-                  filterStatus === tab.key ? "bg-white/20 text-white" : "bg-slate-100 text-slate-500"
+                  filterStatus === tab.key
+                    ? "bg-white/20 text-white"
+                    : "bg-slate-100 text-slate-500"
                 }`}
               >
                 {tab.count}
@@ -486,14 +561,15 @@ export function ResourcesManager({ resources, availableSkills }: ResourcesManage
           ))}
         </div>
 
-        {/* Buttons */}
         <div className="flex items-center gap-2.5 shrink-0">
           <button
             onClick={handleCheckAllLinks}
             disabled={isCheckingLinks}
             className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-50 transition-all cursor-pointer"
           >
-            <RefreshCw className={`w-3.5 h-3.5 text-blue-600 ${isCheckingLinks ? "animate-spin" : ""}`} />
+            <RefreshCw
+              className={`w-3.5 h-3.5 text-blue-600 ${isCheckingLinks ? "animate-spin" : ""}`}
+            />
             <span>{isCheckingLinks ? "Test Ediliyor..." : "Tüm Linkleri Test Et"}</span>
           </button>
 
@@ -502,7 +578,7 @@ export function ResourcesManager({ resources, availableSkills }: ResourcesManage
             className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-[#2F5BFF] hover:bg-blue-700 text-white shadow-md shadow-blue-600/20 transition-all active:scale-95 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            <span>Yeni Kaynak Ekle</span>
+            <span>Yeni Görev Ekle</span>
           </button>
         </div>
       </div>
@@ -512,43 +588,101 @@ export function ResourcesManager({ resources, availableSkills }: ResourcesManage
         columns={columns}
         rowKey={(item) => item.id}
         searchKey="title"
-        searchPlaceholder="Kaynak başlığı veya sağlayıcı ara..."
+        searchPlaceholder="Görev başlığı veya sağlayıcı ara..."
       />
 
       {/* Form Drawer */}
       <FormDrawer
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        title={editingItem ? "Kaynağı Düzenle" : "Yeni Eğitim / Sertifika Kaynağı"}
-        description="Öğrencilerin eksik becerilerini kapatmak için yol haritalarına önerilecek kaynak."
+        title={editingItem ? "Görevi Düzenle" : "Yeni Yol Haritası Görevi Ekle"}
+        description="Öğrencinin patikada tıkladığında göreceği görev başlığını, sade yönergesini ve beceri eşleşmesini yapılandırın."
         width="xl"
       >
         <div className="space-y-4">
+          {/* Canlı Öğrenci Kartı Önizlemesi */}
+          <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-50 to-blue-50/50 border border-blue-200/80 space-y-2.5">
+            <div className="flex items-center justify-between text-[11px] font-extrabold uppercase tracking-wider text-[#2F5BFF]">
+              <span className="inline-flex items-center gap-1.5">
+                <Eye className="w-3.5 h-3.5" />
+                <span>Öğrenci Ekranı Önizlemesi</span>
+              </span>
+              <span className="text-[10px] font-semibold text-slate-500 normal-case">
+                Patika detay penceresinde bu şekilde görünür
+              </span>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-2">
+              <div className="text-sm font-black text-[#0B1F4D] leading-snug">
+                {title.trim() || "Örn: İş Süreçlerini Görsel Şemalarla Anlatmak"}
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 font-extrabold">
+                  <Award className="w-3 h-3 text-amber-500" />
+                  +{previewXpInfo.xp} XP
+                </span>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-600 font-semibold">
+                  <Clock className="w-3 h-3 text-slate-400" />
+                  ~{estimatedHours || 3} Saat
+                </span>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-600 font-semibold">
+                  <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                  {DIFFICULTY_LABELS[difficulty]?.label || "Başlangıç Düzeyi"}
+                </span>
+              </div>
+              <p className="text-xs text-slate-600 leading-relaxed bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                {description.trim() ||
+                  "Öğrencinin gözünü korkutmadan, bu içerikte neyi keşfedeceğini anlatan kısa ve yönlendirici görev açıklaması burada yer alır."}
+              </p>
+            </div>
+          </div>
+
+          {/* 1. Görev Başlığı */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Kaynak Başlığı *</label>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              Görev Başlığı (Öğrencinin Patikada Göreceği Ad) *
+            </label>
             <input
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="Örn: SQL Temelleri ve İleri Sorgulama Teknikleri"
+              placeholder="Örn: Müşteri ve Kullanıcı İhtiyaçlarını Doğru Dinlemek"
               className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+            />
+          </div>
+
+          {/* 2. Görev Yönergesi */}
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              Görev Yönergesi (Sade &amp; Yönlendirici Açıklama)
+            </label>
+            <textarea
+              rows={3}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Ağır teknik terimlere girmeden, öğrencinin bu görevde neyi öğreneceğini 1-2 sade cümleyle yazın..."
+              className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-hidden leading-relaxed"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Sağlayıcı *</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Kaynak Sağlayıcı *
+              </label>
               <input
                 type="text"
                 value={provider}
                 onChange={(e) => setProvider(e.target.value)}
-                placeholder="Örn: BTK Akademi, Coursera, Udemy"
+                placeholder="Örn: BTK Akademi, Microsoft Learn, YouTube"
                 className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Tür *</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Görev Türü *
+              </label>
               <select
                 value={resourceType}
                 onChange={(e) => setResourceType(e.target.value as typeof resourceType)}
@@ -564,7 +698,9 @@ export function ResourcesManager({ resources, availableSkills }: ResourcesManage
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Kaynak Web Adresi (URL) *</label>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              Öğrenme Kaynağı Web Adresi (URL) *
+            </label>
             <div className="flex gap-2">
               <input
                 type="url"
@@ -587,9 +723,58 @@ export function ResourcesManager({ resources, availableSkills }: ResourcesManage
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          {/* Zorluk, Süre ve XP Ayarları */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Dil</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Zorluk Seviyesi
+              </label>
+              <select
+                value={difficulty}
+                onChange={(e) => setDifficulty(Number(e.target.value))}
+                className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl font-semibold"
+              >
+                <option value={1}>1 — Başlangıç Düzeyi</option>
+                <option value={2}>2 — Orta Seviye</option>
+                <option value={3}>3 — İleri Düzey</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Tahmini Süre (Saat)
+              </label>
+              <input
+                type="number"
+                step="0.5"
+                min="0.5"
+                value={estimatedHours}
+                onChange={(e) => setEstimatedHours(Number(e.target.value))}
+                className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                XP Ödülü (İsteğe Bağlı)
+              </label>
+              <input
+                type="number"
+                min="10"
+                max="500"
+                value={customXp}
+                onChange={(e) => setCustomXp(e.target.value)}
+                placeholder={`Otomatik: ${previewXpInfo.xp} XP`}
+                className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                İçerik Dili
+              </label>
               <select
                 value={language}
                 onChange={(e) => setLanguage(e.target.value as typeof language)}
@@ -602,7 +787,9 @@ export function ResourcesManager({ resources, availableSkills }: ResourcesManage
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Ücret Modeli</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Ücret Modeli
+              </label>
               <select
                 value={pricing}
                 onChange={(e) => setPricing(e.target.value as typeof pricing)}
@@ -613,45 +800,6 @@ export function ResourcesManager({ resources, availableSkills }: ResourcesManage
                 <option value="paid">Ücretli</option>
               </select>
             </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Tahmini Süre (Saat)</label>
-              <input
-                type="number"
-                step="0.5"
-                value={estimatedHours}
-                onChange={(e) => setEstimatedHours(Number(e.target.value))}
-                className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl"
-              />
-            </div>
-          </div>
-
-          {/* Certificate Toggle & Info */}
-          <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-xs font-bold text-slate-800">Sertifika Sağlıyor Mu?</div>
-                <div className="text-[11px] text-slate-500">Tamamlandığında resmi sertifika/rozet verilir.</div>
-              </div>
-              <input
-                type="checkbox"
-                checked={givesCertificate}
-                onChange={(e) => setGivesCertificate(e.target.checked)}
-                className="w-4 h-4 rounded text-blue-600"
-              />
-            </div>
-
-            {givesCertificate && (
-              <div>
-                <input
-                  type="text"
-                  value={certificateInfo}
-                  onChange={(e) => setCertificateInfo(e.target.value)}
-                  placeholder="Sertifika adı veya sınav detayları (örn: Microsoft Certified: Power BI Data Analyst Associate)"
-                  className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl"
-                />
-              </div>
-            )}
           </div>
 
           {/* Skill Linker Multi-Selector */}
@@ -659,18 +807,17 @@ export function ResourcesManager({ resources, availableSkills }: ResourcesManage
             <div className="flex items-center justify-between">
               <div className="text-xs font-bold text-[#0B1F4D] flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-                <span>Hedef Beceriler & Seviye Aralığı</span>
+                <span>Hangi Beceri Açığını Kapatır? (AI Eşleştirme Anahtarı)</span>
               </div>
-              <span className="text-[11px] text-blue-700">
+              <span className="text-[11px] text-blue-700 font-semibold">
                 {selectedSkills.length} Beceri Bağlı
               </span>
             </div>
 
             <p className="text-[11px] text-slate-500 leading-relaxed">
-              Öğrencinin check-up sonucunda bu becerideki açığı belirlenen aralıktaysa, yol haritası üreticisi bu kaynağı otomatik olarak seçecektir.
+              Öğrencinin ilk check-up testinde bu beceride eksiği çıktığında, AI / yol haritası motoru bu görevi seçip öğrencinin sprintine ekler.
             </p>
 
-            {/* List of currently linked skills */}
             <div className="space-y-1.5">
               {selectedSkills.map((link) => {
                 const sk = availableSkills.find((s) => s.id === link.skill_id);
@@ -687,7 +834,7 @@ export function ResourcesManager({ resources, availableSkills }: ResourcesManage
                       <button
                         type="button"
                         onClick={() => handleRemoveSkillLink(link.skill_id)}
-                        className="text-slate-400 hover:text-red-600 p-0.5"
+                        className="text-slate-400 hover:text-red-600 p-0.5 cursor-pointer"
                       >
                         <X className="w-4 h-4" />
                       </button>
@@ -697,7 +844,6 @@ export function ResourcesManager({ resources, availableSkills }: ResourcesManage
               })}
             </div>
 
-            {/* Add new skill association row */}
             <div className="pt-2 flex flex-col sm:flex-row items-center gap-2 border-t border-blue-200/60">
               <select
                 value={pickerSkillId}
@@ -712,7 +858,7 @@ export function ResourcesManager({ resources, availableSkills }: ResourcesManage
               </select>
 
               <div className="flex items-center gap-1.5 text-xs text-slate-600">
-                <span>Hedef:</span>
+                <span>Seviye:</span>
                 <select
                   value={pickerMinLevel}
                   onChange={(e) => setPickerMinLevel(Number(e.target.value))}
@@ -748,33 +894,58 @@ export function ResourcesManager({ resources, availableSkills }: ResourcesManage
             </div>
           </div>
 
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Açıklama / Notlar</label>
-            <textarea
-              rows={2}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Öğrencinin bu kaynaktan nasıl faydalanacağını açıklayın..."
-              className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl"
-            />
+          {/* Certificate Toggle */}
+          <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-xs font-bold text-slate-800">
+                  Sertifika Sağlıyor Mu?
+                </div>
+                <div className="text-[11px] text-slate-500">
+                  Tamamlandığında resmi sertifika/rozet verilir.
+                </div>
+              </div>
+              <input
+                type="checkbox"
+                checked={givesCertificate}
+                onChange={(e) => setGivesCertificate(e.target.checked)}
+                className="w-4 h-4 rounded text-blue-600"
+              />
+            </div>
+
+            {givesCertificate && (
+              <div>
+                <input
+                  type="text"
+                  value={certificateInfo}
+                  onChange={(e) => setCertificateInfo(e.target.value)}
+                  placeholder="Sertifika adı (örn: Microsoft Power BI Başlangıç Rozeti)"
+                  className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl"
+                />
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Yayın Durumu</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Yayın Durumu
+              </label>
               <select
                 value={status}
                 onChange={(e) => setStatus(e.target.value as typeof status)}
                 className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl"
               >
-                <option value="published">Yayında (Öğrencilere Önerilir)</option>
+                <option value="published">Yayında (Patikada Önerilir)</option>
                 <option value="draft">Taslak (İncelemede)</option>
                 <option value="archived">Arşiv</option>
               </select>
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Sıralama</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Sıralama Önceliği
+              </label>
               <input
                 type="number"
                 value={sortOrder}
@@ -799,7 +970,11 @@ export function ResourcesManager({ resources, availableSkills }: ResourcesManage
               disabled={isSubmitting}
               className="px-4 py-2 text-xs font-bold bg-[#2F5BFF] hover:bg-blue-600 text-white rounded-xl shadow-md shadow-blue-600/20 cursor-pointer"
             >
-              {isSubmitting ? "Kaydediliyor..." : "Kaydet"}
+              {isSubmitting
+                ? "Kaydediliyor..."
+                : editingItem
+                ? "Güncelle & Patikaya Yansıt"
+                : "Görevi Kataloğa Ekle"}
             </button>
           </div>
         </div>
@@ -810,9 +985,9 @@ export function ResourcesManager({ resources, availableSkills }: ResourcesManage
         isOpen={deleteConfirm.isOpen}
         onClose={() => setDeleteConfirm({ isOpen: false, item: null })}
         onConfirm={handleDeleteConfirm}
-        title="Kaynağı Sil"
-        message={`"${deleteConfirm.item?.title}" kaynağı katalogdan kalıcı olarak silinecektir.`}
-        confirmLabel="Kalıcı Sil"
+        title="Görevi Katalogdan Sil"
+        message={`"${deleteConfirm.item?.title}" başlıklı görevi silmek istediğinize emin misiniz?`}
+        confirmLabel="Evet, Sil"
         variant="danger"
       />
     </div>

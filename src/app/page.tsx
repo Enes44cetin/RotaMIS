@@ -12,9 +12,19 @@ export default async function HomePage() {
     data: { user },
   } = await supabase.auth.getUser();
 
+  let isAdmin = false;
+  if (user) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
+    isAdmin = profile?.role === "admin";
+  }
+
   return (
     <div className="min-h-screen flex flex-col bg-[#F7F9FC] text-slate-900 overflow-x-hidden">
-      <LandingNavbar isLoggedIn={!!user} />
+      <LandingNavbar isLoggedIn={!!user} isAdmin={isAdmin} />
       <main className="flex-1">
         <HeroSection />
         <HowItWorksSection />

@@ -105,6 +105,14 @@ export const resourceSchema = z.object({
   pricing: z.enum(["free", "freemium", "paid"]).default("free"),
   estimated_hours: z.coerce.number().min(0.5).max(500).default(4.0),
   difficulty: z.coerce.number().int().min(1).max(3).default(1),
+  xp_reward: z
+    .preprocess(
+      (val) =>
+        val === "" || val === null || val === undefined ? null : Number(val),
+      z.number().int().min(10, "XP en az 10 olmalıdır").max(500, "XP en fazla 500 olabilir").nullable()
+    )
+    .optional()
+    .default(null),
   gives_certificate: z.boolean().default(false),
   certificate_info: z.string().trim().max(250).optional().default(""),
   description: z.string().trim().max(1000).optional().default(""),

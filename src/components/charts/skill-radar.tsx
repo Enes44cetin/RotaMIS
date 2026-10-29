@@ -1,12 +1,12 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import {
   Radar,
   RadarChart,
   PolarGrid,
   PolarAngleAxis,
   PolarRadiusAxis,
-  ResponsiveContainer,
   Tooltip,
   Legend,
 } from "recharts";
@@ -21,33 +21,155 @@ interface SkillGapItem {
 
 interface SkillRadarProps {
   data: SkillGapItem[];
+  compact?: boolean;
 }
 
-export function SkillRadar({ data }: SkillRadarProps) {
+interface PolarTickProps {
+  x?: number | string;
+  y?: number | string;
+  textAnchor?: "start" | "middle" | "end" | "inherit";
+  payload?: {
+    value?: string | number;
+  };
+}
+
+function wrapSkillLabel(rawLabel: string, maxCharsPerLine: number): string[] {
+  const clean = rawLabel.trim();
+  if (clean.length <= maxCharsPerLine) return [clean];
+
+  const words = clean.split(/\s+/);
+  const lines: string[] = [];
+  let current = "";
+
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (candidate.length <= maxCharsPerLine) {
+      current = candidate;
+    } else {
+      if (current) lines.push(current);
+      current = word;
+    }
+  }
+  if (current) lines.push(current);
+
+  if (lines.length <= 2) {
+    return lines.map((line) =>
+      line.length > maxCharsPerLine + 2
+        ? `${line.slice(0, maxCharsPerLine)}…`
+        : line
+    );
+  }
+
+  const first = lines[0];
+  const rest = lines.slice(1).join(" ");
+  const second =
+    rest.length > maxCharsPerLine
+      ? `${rest.slice(0, maxCharsPerLine - 1)}…`
+      : rest;
+  return [first, second];
+}
+
+export function SkillRadar({ data, compact = false }: SkillRadarProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [dimensions, setDimensions] = useState<{ width: number; height: number }>({
+    width: 0,
+    height: 0,
+  });
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const updateSize = () => {
+      const rect = el.getBoundingClientRect();
+      const nextWidth = Math.floor(rect.width);
+      const nextHeight = Math.floor(rect.height);
+      setDimensions((prev) =>
+        prev.width === nextWidth && prev.height === nextHeight
+          ? prev
+          : { width: nextWidth, height: nextHeight }
+      );
+    };
+
+    updateSize();
+
+    const observer = new ResizeObserver(() => {
+      updateSize();
+    });
+    observer.observe(el);
+
+    return () => observer.disconnect();
+  }, []);
+
   if (!data || data.length === 0) {
     return (
-      <div className="h-72 flex items-center justify-center text-slate-400 text-xs">
+      <div className="h-60 flex items-center justify-center text-slate-400 text-xs">
         Grafik oluşturulacak beceri verisi bulunamadı.
       </div>
     );
   }
 
   // Format data for Recharts (limit to top skills if too many for clean display)
-  const chartData = data.slice(0, 10).map((d) => ({
+  const chartData = data.slice(0, compact ? 8 : 10).map((d) => ({
     skill: d.name_tr,
     "Senin Seviyen": d.current_level,
     "Sektör Beklentisi": d.required_level,
   }));
 
+  const maxLineChars = compact ? 13 : 18;
+  const fontSize = compact ? 10 : 11;
+
+  const renderPolarTick = (props: PolarTickProps) => {
+    const x = Number(props.x ?? 0);
+    const y = Number(props.y ?? 0);
+    const rawValue = String(props.payload?.value ?? "");
+    const lines = wrapSkillLabel(rawValue, maxLineChars);
+    const anchor = props.textAnchor || "middle";
+    const startDy = lines.length > 1 ? -4 : 3;
+
+    return (
+      <text
+        x={x}
+        y={y}
+        textAnchor={anchor}
+        fill="#334155"
+        fontSize={fontSize}
+        fontWeight={600}
+      >
+        {lines.map((line, index) => (
+          <tspan
+            key={`${rawValue}-${index}`}
+            x={x}
+            dy={index === 0 ? startDy : fontSize + 2}
+          >
+            {line}
+          </tspan>
+        ))}
+      </text>
+    );
+  };
+
   return (
-    <div className="w-full h-80 sm:h-96">
-      <ResponsiveContainer width="100%" height="100%">
-        <RadarChart cx="50%" cy="50%" outerRadius="75%" data={chartData}>
+    <div
+      ref={containerRef}
+      className={compact ? "w-full h-64 overflow-hidden" : "w-full h-80 sm:h-96 overflow-hidden"}
+    >
+      {dimensions.width > 0 && dimensions.height > 0 && (
+        <RadarChart
+          width={dimensions.width}
+          height={dimensions.height}
+          cx="50%"
+          cy="48%"
+          outerRadius={compact ? "52%" : "68%"}
+          margin={
+            compact
+              ? { top: 10, right: 24, bottom: 6, left: 24 }
+              : { top: 12, right: 32, bottom: 8, left: 32 }
+          }
+          data={chartData}
+        >
           <PolarGrid stroke="#E2E8F0" />
-          <PolarAngleAxis
-            dataKey="skill"
-            tick={{ fill: "#334155", fontSize: 11, fontWeight: 600 }}
-          />
+          <PolarAngleAxis dataKey="skill" tick={renderPolarTick} />
           <PolarRadiusAxis
             angle={30}
             domain={[0, 5]}
@@ -83,13 +205,13 @@ export function SkillRadar({ data }: SkillRadarProps) {
           />
           <Legend
             wrapperStyle={{
-              paddingTop: "12px",
-              fontSize: "12px",
+              paddingTop: "8px",
+              fontSize: compact ? "11px" : "12px",
               fontWeight: 600,
             }}
           />
         </RadarChart>
-      </ResponsiveContainer>
+      )}
     </div>
   );
 }

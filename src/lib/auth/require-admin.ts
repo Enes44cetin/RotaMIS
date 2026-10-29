@@ -1,5 +1,5 @@
 import { cache } from "react";
-import { redirect, notFound } from "next/navigation";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
 export interface AdminSession {
@@ -37,8 +37,7 @@ export const requireAdmin = cache(async (): Promise<AdminSession> => {
     .single();
 
   if (!profile || profile.role !== "admin") {
-    // Return 404 to avoid exposing admin route existence to regular users
-    notFound();
+    redirect("/login?redirect=/admin&reason=not_admin");
   }
 
   return {

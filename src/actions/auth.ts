@@ -95,15 +95,29 @@ export async function loginAction(
     .eq("id", data.user.id)
     .single();
 
+  const rawRedirect = formData.get("redirectTo");
+  const safeRedirect =
+    typeof rawRedirect === "string" &&
+    rawRedirect.startsWith("/") &&
+    !rawRedirect.startsWith("//")
+      ? rawRedirect
+      : null;
+
+  if (safeRedirect?.startsWith("/admin") && profile?.role !== "admin") {
+    return {
+      error: `Giriş yapılan "${email}" hesabı Öğrenci rolündedir ve Admin Konsolu yetkisi yoktur. Lütfen yönetici e-posta adresinizle giriş yapın.`,
+    };
+  }
+
   if (profile?.role === "admin") {
-    redirect("/admin");
+    redirect(safeRedirect?.startsWith("/admin") ? safeRedirect : "/admin");
   }
 
   if (!profile?.onboarding_completed) {
     redirect("/onboarding");
   }
 
-  redirect("/dashboard");
+  redirect(safeRedirect && !safeRedirect.startsWith("/admin") ? safeRedirect : "/dashboard");
 }
 
 export async function registerAction(

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import {
   resourceSchema,
   uuidSchema,
@@ -33,6 +34,17 @@ function isSafeExternalUrl(rawUrl: string): boolean {
   }
 }
 
+function computeEffectiveXp(
+  customXp: number | null | undefined,
+  hours: number,
+  difficulty: number
+): number {
+  if (typeof customXp === "number" && customXp >= 10) {
+    return Math.min(500, customXp);
+  }
+  return Math.min(100, Math.max(15, Math.round(hours * 7 + difficulty * 5)));
+}
+
 export async function createResourceAction(data: ResourceFormData) {
   try {
     const session = await requireAdmin();
@@ -40,32 +52,47 @@ export async function createResourceAction(data: ResourceFormData) {
 
     const supabase = await createClient();
 
-    // 1. Insert learning resource
-    const { data: resource, error } = await supabase
+    const insertPayload: Record<string, unknown> = {
+      title: validated.title,
+      provider: validated.provider,
+      url: validated.url,
+      resource_type: validated.resource_type,
+      language: validated.language,
+      pricing: validated.pricing,
+      estimated_hours: validated.estimated_hours,
+      difficulty: validated.difficulty,
+      gives_certificate: validated.gives_certificate,
+      certificate_info: validated.certificate_info || null,
+      description: validated.description || null,
+      status: validated.status,
+      sort_order: validated.sort_order,
+    };
+
+    if (validated.xp_reward !== undefined) {
+      insertPayload.xp_reward = validated.xp_reward;
+    }
+
+    let { data: resource, error } = await supabase
       .from("learning_resources")
-      .insert({
-        title: validated.title,
-        provider: validated.provider,
-        url: validated.url,
-        resource_type: validated.resource_type,
-        language: validated.language,
-        pricing: validated.pricing,
-        estimated_hours: validated.estimated_hours,
-        difficulty: validated.difficulty,
-        gives_certificate: validated.gives_certificate,
-        certificate_info: validated.certificate_info || null,
-        description: validated.description || null,
-        status: validated.status,
-        sort_order: validated.sort_order,
-      })
+      .insert(insertPayload)
       .select("id, title")
       .single();
+
+    if (error && error.message.includes("xp_reward")) {
+      delete insertPayload.xp_reward;
+      const retry = await supabase
+        .from("learning_resources")
+        .insert(insertPayload)
+        .select("id, title")
+        .single();
+      resource = retry.data;
+      error = retry.error;
+    }
 
     if (error || !resource) {
       return { success: false, error: error?.message || "Kaynak eklenemedi" };
     }
 
-    // 2. Insert skill associations
     if (validated.skills && validated.skills.length > 0) {
       const skillLinks = validated.skills.map((s) => ({
         resource_id: resource.id,
@@ -87,6 +114,7 @@ export async function createResourceAction(data: ResourceFormData) {
 
     revalidatePath("/admin/resources");
     revalidatePath("/admin");
+    revalidatePath("/dashboard");
     return { success: true, id: resource.id };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Kaynak oluşturulamadı";
@@ -101,30 +129,42 @@ export async function updateResourceAction(id: string, data: ResourceFormData) {
     const validated = resourceSchema.parse(data);
 
     const supabase = await createClient();
+    const adminClient = createAdminClient();
 
-    // 1. Update resource details
-    const { error } = await supabase
+    const updatePayload: Record<string, unknown> = {
+      title: validated.title,
+      provider: validated.provider,
+      url: validated.url,
+      resource_type: validated.resource_type,
+      language: validated.language,
+      pricing: validated.pricing,
+      estimated_hours: validated.estimated_hours,
+      difficulty: validated.difficulty,
+      gives_certificate: validated.gives_certificate,
+      certificate_info: validated.certificate_info || null,
+      description: validated.description || null,
+      status: validated.status,
+      sort_order: validated.sort_order,
+      xp_reward: validated.xp_reward ?? null,
+    };
+
+    let { error } = await supabase
       .from("learning_resources")
-      .update({
-        title: validated.title,
-        provider: validated.provider,
-        url: validated.url,
-        resource_type: validated.resource_type,
-        language: validated.language,
-        pricing: validated.pricing,
-        estimated_hours: validated.estimated_hours,
-        difficulty: validated.difficulty,
-        gives_certificate: validated.gives_certificate,
-        certificate_info: validated.certificate_info || null,
-        description: validated.description || null,
-        status: validated.status,
-        sort_order: validated.sort_order,
-      })
+      .update(updatePayload)
       .eq("id", validId);
+
+    if (error && error.message.includes("xp_reward")) {
+      delete updatePayload.xp_reward;
+      const retry = await supabase
+        .from("learning_resources")
+        .update(updatePayload)
+        .eq("id", validId);
+      error = retry.error;
+    }
 
     if (error) return { success: false, error: error.message };
 
-    // 2. Re-sync skill links
+    // 2. Beceri bağlantılarını güncelle
     await supabase.from("resource_skills").delete().eq("resource_id", validId);
 
     if (validated.skills && validated.skills.length > 0) {
@@ -138,6 +178,38 @@ export async function updateResourceAction(id: string, data: ResourceFormData) {
       await supabase.from("resource_skills").insert(skillLinks);
     }
 
+    // 3. Öğrencilerin ekranındaki mevcut görevleri (tasks) anında senkronize et!
+    // Not: Tamamlanmış görevlerin kazanılmış XP muhasebesi bozulmasın diye xp_reward yalnızca aktif görevlerde güncellenir;
+    // başlık, yönerge, URL, tür, süre ve zorluk ise tüm bağlı görevlerde anında güncellenir.
+    const effectiveXp = computeEffectiveXp(
+      validated.xp_reward,
+      validated.estimated_hours,
+      validated.difficulty
+    );
+    const primarySkillId = validated.skills?.[0]?.skill_id ?? null;
+
+    await Promise.all([
+      adminClient
+        .from("tasks")
+        .update({
+          title: validated.title,
+          description: validated.description || null,
+          resource_url: validated.url,
+          resource_type: validated.resource_type,
+          estimated_hours: validated.estimated_hours,
+          difficulty: validated.difficulty,
+        })
+        .eq("resource_id", validId),
+      adminClient
+        .from("tasks")
+        .update({
+          xp_reward: effectiveXp,
+          ...(primarySkillId ? { skill_id: primarySkillId } : {}),
+        })
+        .eq("resource_id", validId)
+        .in("status", ["pending", "in_progress"]),
+    ]);
+
     await logAdminAction({
       action: "update_resource",
       entityType: "resource",
@@ -147,6 +219,8 @@ export async function updateResourceAction(id: string, data: ResourceFormData) {
     });
 
     revalidatePath("/admin/resources");
+    revalidatePath("/admin");
+    revalidatePath("/dashboard");
     return { success: true };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Kaynak güncellenemedi";
@@ -178,6 +252,7 @@ export async function toggleStatusResourceAction(
     });
 
     revalidatePath("/admin/resources");
+    revalidatePath("/dashboard");
     return { success: true };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Durum değiştirilemedi";
@@ -205,6 +280,7 @@ export async function deleteResourceAction(id: string) {
     });
 
     revalidatePath("/admin/resources");
+    revalidatePath("/dashboard");
     return { success: true };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Silme işlemi başarısız";
@@ -233,7 +309,6 @@ export async function checkResourceLinksAction() {
     let brokenCount = 0;
     const nowIso = new Date().toISOString();
 
-    // Process in concurrent batches of 6 to avoid long sequential timeouts
     const BATCH_SIZE = 6;
     for (let i = 0; i < resources.length; i += BATCH_SIZE) {
       const batch = resources.slice(i, i + BATCH_SIZE);

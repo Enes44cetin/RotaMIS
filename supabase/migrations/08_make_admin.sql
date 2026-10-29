@@ -4,7 +4,7 @@
 -- =========================================================
 update public.profiles
    set role = 'admin'
- where email = 'senin-epostan@ornek.com';   -- <-- kendi e-postanla değiştir
+ where lower(trim(email)) = lower(trim('senin-epostan@ornek.com'));   -- <-- kendi e-postanla değiştir
 
 -- Kontrol: aşağıda kendi e-postanı 'admin' olarak görmelisin
-select id, email, role from public.profiles where role = 'admin';
+select id, email, role, onboarding_completed from public.profiles where role = 'admin';

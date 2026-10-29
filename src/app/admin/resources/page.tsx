@@ -8,35 +8,19 @@ import {
 } from "@/components/admin/resources/resources-manager";
 
 export const metadata: Metadata = {
-  title: "Eğitim & Sertifika Kataloğu — Admin Konsolu",
+  title: "Görev & Eğitim Kataloğu — Admin Konsolu",
 };
 
 export default async function AdminResourcesPage() {
   await requireAdmin();
   const supabase = await createClient();
 
-  // 1. Fetch learning resources and available skills in parallel
   const [{ data: rawResources }, { data: rawSkills }] = await Promise.all([
     supabase
       .from("learning_resources")
       .select(
         `
-        id,
-        title,
-        provider,
-        url,
-        resource_type,
-        language,
-        pricing,
-        estimated_hours,
-        difficulty,
-        gives_certificate,
-        certificate_info,
-        description,
-        status,
-        last_checked_at,
-        link_status,
-        sort_order,
+        *,
         resource_skills (
           skill_id,
           min_level,
@@ -70,6 +54,11 @@ export default async function AdminResourcesPage() {
         skill: { id: string; name_tr: string } | null;
       }[]) || [];
 
+    const customXp =
+      typeof (r as { xp_reward?: unknown }).xp_reward === "number"
+        ? ((r as { xp_reward: number }).xp_reward as number)
+        : null;
+
     return {
       id: r.id,
       title: r.title,
@@ -78,8 +67,9 @@ export default async function AdminResourcesPage() {
       resource_type: r.resource_type,
       language: r.language as "tr" | "en" | "mixed",
       pricing: r.pricing as "free" | "freemium" | "paid",
-      estimated_hours: Number(r.estimated_hours) || 4.0,
-      difficulty: r.difficulty,
+      estimated_hours: Number(r.estimated_hours) || 3.5,
+      difficulty: r.difficulty || 1,
+      xp_reward: customXp,
       gives_certificate: r.gives_certificate,
       certificate_info: r.certificate_info,
       description: r.description,
@@ -100,11 +90,12 @@ export default async function AdminResourcesPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-bold text-[#0B1F4D]">
-          Eğitim &amp; Sertifika Kataloğu
+          Görev &amp; Eğitim Kataloğu (Yol Haritası Havuzu)
         </h1>
-        <p className="text-xs text-slate-500 mt-0.5">
-          Öğrencilerin kişiselleştirilmiş yol haritalarına atanacak doğrulanmış kurs,
-          pratik ve sertifika kaynaklarını yönetin.
+        <p className="text-xs text-slate-500 mt-0.5 leading-relaxed max-w-3xl">
+          Öğrencilerin ilk check-up testinden sonra AI / eşleştirme motoru tarafından seçilip
+          patikada (Sprintlerde) gösterilecek görev kartlarını buradan yönetin. Yaptığınız başlık
+          ve yönerge düzenlemeleri öğrenci ekranlarına anında yansır.
         </p>
       </div>
 

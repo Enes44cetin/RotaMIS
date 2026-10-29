@@ -13,8 +13,10 @@ import {
   Users,
   Compass,
   ArrowLeft,
+  LogOut,
   X,
 } from "lucide-react";
+import { signOutAction } from "@/actions/auth";
 
 interface AdminSidebarProps {
   isOpen: boolean;
@@ -158,15 +160,25 @@ export function AdminSidebar({ isOpen, onClose }: AdminSidebarProps) {
           ))}
         </div>
 
-        {/* Footer: Return to student dashboard */}
-        <div className="p-3 border-t border-slate-800">
+        {/* Footer: Return to student dashboard & Sign out */}
+        <div className="p-3 border-t border-slate-800 space-y-1">
           <Link
             href="/dashboard"
-            className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800/80 transition-colors"
+            className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800/80 transition-colors"
           >
             <ArrowLeft className="w-4 h-4 text-[#2F5BFF]" />
-            <span>Öğrenci Paneline Dön</span>
+            <span>Öğrenci Görünümüne Geç</span>
           </Link>
+
+          <form action={signOutAction}>
+            <button
+              type="submit"
+              className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-400 hover:text-rose-300 hover:bg-rose-950/40 transition-colors cursor-pointer"
+            >
+              <LogOut className="w-4 h-4 text-rose-400" />
+              <span>Oturumu Kapat (Çıkış)</span>
+            </button>
+          </form>
         </div>
       </aside>
     </>
