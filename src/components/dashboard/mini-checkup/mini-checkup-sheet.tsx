@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   X,
@@ -12,10 +12,13 @@ import {
   Loader2,
   CheckCircle2,
   Award,
+  Radar,
+  Briefcase,
 } from "lucide-react";
 import { toast } from "sonner";
 import { submitMiniCheckup } from "@/actions/journey";
 import { useDashboard } from "../dashboard-shell";
+import { selectDynamicMiniCheckupTopics } from "@/lib/checkup/topic-selector";
 import type {
   MiniCheckupSkillDelta,
   SkillGapRow,
@@ -29,20 +32,12 @@ interface MiniCheckupSheetProps {
 }
 
 const LEVEL_LABELS: Record<number, string> = {
-  1: "Başlangıç",
-  2: "Temel",
-  3: "Orta",
-  4: "İyi",
+  1: "Bilgim Yok",
+  2: "Aşina / Temel",
+  3: "Uygulayıcı",
+  4: "Yetkin",
   5: "Uzman",
 };
-
-interface CheckupSkillItem {
-  skillId: string;
-  nameTr: string;
-  previousLevel: number;
-  requiredLevel: number;
-  taskCount: number;
-}
 
 export function MiniCheckupSheet({
   sprint,
@@ -54,72 +49,33 @@ export function MiniCheckupSheet({
   const prefersReducedMotion = useReducedMotion();
   const [isSubmitting, startSubmitTransition] = useTransition();
 
-  // Yalnızca bu son sprintte çalışılan becerileri derle (kullanıcı kararı: son sprint yeterli)
-  const targetSkills = useMemo<CheckupSkillItem[]>(() => {
-    if (!sprint) return [];
-
-    const gapMap = new Map(skillGaps.map((g) => [g.skill_id, g]));
-    const collected = new Map<string, CheckupSkillItem>();
-
-    for (const task of sprint.tasks) {
-      if (task.skill && task.skill.id) {
-        const existing = collected.get(task.skill.id);
-        const gapRow = gapMap.get(task.skill.id);
-        if (existing) {
-          existing.taskCount += 1;
-        } else {
-          collected.set(task.skill.id, {
-            skillId: task.skill.id,
-            nameTr: task.skill.name_tr,
-            previousLevel: Math.max(1, gapRow?.current_level || 1),
-            requiredLevel: gapRow?.required_level || 4,
-            taskCount: 1,
-          });
-        }
-      }
-    }
-
-    // Güvenli yedek: Eğer bu sprintteki görevlerde doğrudan beceri bağı yoksa odak becerileri kullan
-    if (collected.size === 0) {
-      for (const fs of sprint.focusSkills) {
-        const gapRow = gapMap.get(fs.id);
-        collected.set(fs.id, {
-          skillId: fs.id,
-          nameTr: fs.name_tr,
-          previousLevel: Math.max(1, gapRow?.current_level || 1),
-          requiredLevel: gapRow?.required_level || 4,
-          taskCount: 1,
-        });
-      }
-    }
-
-    if (collected.size === 0) {
-      for (const g of skillGaps.slice(0, 3)) {
-        collected.set(g.skill_id, {
-          skillId: g.skill_id,
-          nameTr: g.name_tr,
-          previousLevel: Math.max(1, g.current_level || 1),
-          requiredLevel: g.required_level || 4,
-          taskCount: 1,
-        });
-      }
-    }
-
-    return Array.from(collected.values()).slice(0, 6);
-  }, [sprint, skillGaps]);
+  // Dinamik Soru Seçim Motoru: Sprint yoğunluğu, çalışılan görevler ve mesleğin 6 radar eksenine göre 3..8 konu seçer
+  const { topics: targetSkills, dynamicReasonSummary } = useMemo(
+    () => selectDynamicMiniCheckupTopics(sprint, skillGaps),
+    [sprint, skillGaps]
+  );
 
   const [ratings, setRatings] = useState<Record<string, number>>({});
   const [completedResult, setCompletedResult] = useState<{
     xpAwarded: number;
     deltas: MiniCheckupSkillDelta[];
   } | null>(null);
+  const initializedSprintIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!sprint) {
+      initializedSprintIdRef.current = null;
       setRatings({});
       setCompletedResult(null);
       return;
     }
+
+    // Yalnızca yeni bir sprint için modal açıldığında başlangıç puanlarını sıfırla;
+    // submit sonrası revalidatePath("/dashboard") yeni skillGaps gönderdiğinde Boss zafer ekranını koru!
+    if (initializedSprintIdRef.current === sprint.id) {
+      return;
+    }
+    initializedSprintIdRef.current = sprint.id;
 
     const initial: Record<string, number> = {};
     for (const item of targetSkills) {
@@ -160,7 +116,9 @@ export function MiniCheckupSheet({
 
       const awarded = res.xpAwarded ?? 50;
       grantClientXpBonus(awarded);
-      toast.success(`Boss geçildi! +${awarded} XP kazandın 🏆`);
+      toast.success(
+        `Boss geçildi! Meslek radarın güncellendi ve +${awarded} XP kazandın 🏆`
+      );
       setCompletedResult({
         xpAwarded: awarded,
         deltas: res.deltas || [],
@@ -213,7 +171,7 @@ export function MiniCheckupSheet({
                 : { opacity: 0, y: 32, scale: 0.97 }
             }
             transition={{ type: "spring", stiffness: 320, damping: 28 }}
-            className="relative z-10 w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl bg-white border border-slate-200 shadow-2xl overflow-hidden max-h-[90dvh] flex flex-col"
+            className="relative z-10 w-full sm:max-w-xl rounded-t-3xl sm:rounded-3xl bg-white border border-slate-200 shadow-2xl overflow-hidden max-h-[92dvh] flex flex-col"
           >
             {completedResult ? (
               /* ========== BOSS YENİLDİ! SONUÇ EKRANI ========== */
@@ -233,13 +191,13 @@ export function MiniCheckupSheet({
                     {sprint.cycleNumber}. Döngü Başarıyla Tamamlandı!
                   </h3>
                   <p className="text-xs sm:text-sm text-amber-50/90 mt-1">
-                    Beceri radarın ve hazırlık skorun yeni özdeğerlendirmene göre güncellendi.
+                    Mesleğine özel 6&apos;lı beceri radarın ve hazırlık skorun yeni özdeğerlendirmene göre canlı olarak güncellendi.
                   </p>
                 </div>
 
                 <div className="p-5 sm:p-6 space-y-3 overflow-y-auto">
                   <div className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
-                    Güncellenen Beceri Seviyelerin
+                    Güncellenen Sektörel Yetkinlik Seviyelerin
                   </div>
 
                   {completedResult.deltas.map((d) => {
@@ -263,7 +221,9 @@ export function MiniCheckupSheet({
                             {d.previousLevel}/5 →
                           </span>
                           <span className="px-2.5 py-1 rounded-xl bg-emerald-100 border border-emerald-200 text-emerald-900 text-xs font-black tabular-nums inline-flex items-center gap-1">
-                            {diff > 0 && <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />}
+                            {diff > 0 && (
+                              <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
+                            )}
                             <span>{d.newLevel}/5</span>
                           </span>
                         </div>
@@ -291,7 +251,7 @@ export function MiniCheckupSheet({
                 </div>
               </>
             ) : (
-              /* ========== HIZLI ÖZDEĞERLENDİRME FORMU ========== */
+              /* ========== SEKTÖREL & DİNAMİK ÖZDEĞERLENDİRME FORMU ========== */
               <>
                 <div className="p-5 sm:p-6 bg-gradient-to-r from-amber-50 via-orange-50/70 to-amber-50/40 border-b border-amber-200/70">
                   <div className="flex items-start justify-between gap-3">
@@ -300,15 +260,20 @@ export function MiniCheckupSheet({
                         <Swords className="w-6 h-6" />
                       </div>
                       <div>
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-100 border border-amber-300 text-amber-900 text-[11px] font-extrabold">
-                          <Sparkles className="w-3 h-3 text-amber-600" />
-                          <span>Boss Durağı • +50 XP</span>
-                        </span>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-100 border border-amber-300 text-amber-900 text-[11px] font-extrabold">
+                            <Sparkles className="w-3 h-3 text-amber-600" />
+                            <span>Boss Durağı • +50 XP</span>
+                          </span>
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-[#2F5BFF] text-[11px] font-extrabold">
+                            <span>Dinamik: {targetSkills.length} Sektörel Konu</span>
+                          </span>
+                        </div>
                         <h3
                           id="mini-checkup-title"
                           className="mt-1 text-lg sm:text-xl font-black text-[#0B1F4D]"
                         >
-                          Hızlı Beceri Özdeğerlendirmesi
+                          Sektörel Yetkinlik Check-Up&apos;ı
                         </h3>
                       </div>
                     </div>
@@ -323,26 +288,53 @@ export function MiniCheckupSheet({
                     </button>
                   </div>
 
-                  <p className="mt-3 text-xs sm:text-sm text-slate-600 leading-relaxed">
-                    Bu sprintte çalıştığın becerilerde kendini şu an <strong>1 ile 5</strong> arasında
-                    nerede görüyorsun? Seçimlerin bir sonraki döngünün görevlerini şekillendirecek.
+                  <p className="mt-2.5 text-xs text-slate-600 leading-relaxed">
+                    {dynamicReasonSummary}
                   </p>
                 </div>
 
                 <div className="p-5 sm:p-6 space-y-4 overflow-y-auto">
-                  {targetSkills.map((sk) => {
+                  {targetSkills.map((sk, idx) => {
                     const currentVal = ratings[sk.skillId] ?? sk.previousLevel;
+                    const activeAnchor =
+                      sk.anchors.find((a) => a.level === currentVal) ||
+                      sk.anchors[0];
+
                     return (
                       <div
                         key={sk.skillId}
                         className="p-4 rounded-2xl bg-slate-50/90 border border-slate-200/80 space-y-3"
                       >
                         <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <div className="text-sm font-extrabold text-[#0B1F4D]">
-                              {sk.nameTr}
+                          <div className="space-y-1">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="text-[11px] font-black text-slate-400">
+                                #{idx + 1}
+                              </span>
+                              <span className="text-sm font-extrabold text-[#0B1F4D]">
+                                {sk.nameTr}
+                              </span>
+
+                              {sk.isRadarAxis && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-100/80 border border-amber-300 text-amber-950 text-[10px] font-extrabold">
+                                  <Radar className="w-3 h-3 text-amber-600" />
+                                  <span>Radar Ekseni</span>
+                                </span>
+                              )}
+
+                              {sk.displayBadge && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10px] font-bold">
+                                  <Briefcase className="w-2.5 h-2.5" />
+                                  <span>{sk.displayBadge}</span>
+                                </span>
+                              )}
                             </div>
-                            <div className="text-[11px] font-semibold text-slate-500 mt-0.5">
+
+                            <p className="text-xs text-slate-600 leading-relaxed">
+                              {sk.promptTr}
+                            </p>
+
+                            <div className="text-[11px] font-semibold text-slate-500">
                               Önceki puanın: {sk.previousLevel}/5 • Sektör hedefi:{" "}
                               {sk.requiredLevel}/5
                             </div>
@@ -384,6 +376,15 @@ export function MiniCheckupSheet({
                             );
                           })}
                         </div>
+
+                        {activeAnchor && (
+                          <div className="px-3 py-2 rounded-xl bg-white border border-slate-200/70 text-[11px] text-slate-600 leading-snug">
+                            <strong className="text-[#0B1F4D]">
+                              Seviye {currentVal} ({activeAnchor.label}):
+                            </strong>{" "}
+                            {activeAnchor.desc}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -401,7 +402,9 @@ export function MiniCheckupSheet({
                     ) : (
                       <CheckCircle2 className="w-5 h-5" />
                     )}
-                    <span>Özdeğerlendirmeyi Kaydet (+50 XP Kazan)</span>
+                    <span>
+                      Özdeğerlendirmeyi Kaydet &amp; Radarı Güncelle (+50 XP)
+                    </span>
                   </button>
                 </div>
               </>
@@ -412,4 +415,3 @@ export function MiniCheckupSheet({
     </AnimatePresence>
   );
 }
-

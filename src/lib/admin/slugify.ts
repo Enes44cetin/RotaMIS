@@ -32,3 +32,5 @@ export function slugify(text: string): string {
     .replace(/^-+/, "") // trim - from start of text
     .replace(/-+$/, ""); // trim - from end of text
 }
+
+export const slugifyTr = slugify;

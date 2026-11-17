@@ -30,6 +30,34 @@ export interface SkillGapRow {
   required_level: number;
   importance: number;
   gap: number;
+  career_path_name?: string | null;
+  is_radar_axis?: boolean;
+  axis_order?: number | null;
+  axis_label_tr?: string | null;
+  demand_pct?: number | null;
+  mention_count?: number | null;
+  total_postings?: number | null;
+  priority_label?: string | null;
+  display_badge?: string | null;
+  is_core_checkup?: boolean;
+  prompt_tr?: string | null;
+  level_anchors?: Record<string, string> | null;
+}
+
+export interface CareerRequirementItem {
+  career_path_id: string;
+  skill_id: string;
+  required_level: number;
+  importance: number;
+  is_radar_axis?: boolean;
+  axis_order?: number | null;
+  axis_label_tr?: string | null;
+  demand_pct?: number | null;
+  mention_count?: number | null;
+  total_postings?: number | null;
+  priority_label?: string | null;
+  display_badge?: string | null;
+  is_core_checkup?: boolean;
 }
 
 export interface CategoryScoreRow {

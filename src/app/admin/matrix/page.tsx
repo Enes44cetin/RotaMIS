@@ -39,7 +39,7 @@ export default async function AdminMatrixPage({ searchParams }: MatrixPageProps)
         .order("sort_order"),
       supabase
         .from("career_path_skill_requirements")
-        .select("career_path_id, skill_id, required_level, importance"),
+        .select("*"),
     ]);
 
   const enrichedCareerPaths = (careerPaths || []).map((cp) => ({

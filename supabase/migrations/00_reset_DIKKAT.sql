@@ -6,11 +6,15 @@
 -- =========================================================
 drop trigger if exists on_auth_user_created on auth.users;
 
+drop view if exists public.v_career_radar       cascade;
 drop view if exists public.v_assessment_history cascade;
 drop view if exists public.v_category_scores    cascade;
 drop view if exists public.v_skill_gap          cascade;
 drop view if exists public.v_latest_assessment  cascade;
 
+drop table if exists public.market_import_batches          cascade;
+drop table if exists public.catalog_demand                 cascade;
+drop table if exists public.sprints                        cascade;
 drop table if exists public.admin_audit_log                cascade;
 drop table if exists public.resource_skills                cascade;
 drop table if exists public.learning_resources             cascade;
@@ -27,6 +31,9 @@ drop table if exists public.profiles                       cascade;
 drop table if exists public.career_paths                   cascade;
 drop table if exists public.universities                   cascade;
 
+drop function if exists public.reset_student_career_journey() cascade;
+drop function if exists public.submit_mini_checkup(uuid, jsonb) cascade;
+drop function if exists public.append_sprint(uuid, uuid, jsonb, text, uuid[]) cascade;
 drop function if exists public.save_requirement_matrix(uuid, jsonb) cascade;
 drop function if exists public.assessments_after_complete()  cascade;
 drop function if exists public.assessments_before_update()   cascade;
@@ -39,6 +46,9 @@ drop function if exists public.handle_new_user()             cascade;
 drop function if exists public.is_admin()                    cascade;
 drop function if exists public.set_updated_at()              cascade;
 
+drop type if exists public.assessment_kind    cascade;
+drop type if exists public.sprint_status      cascade;
+drop type if exists public.sprint_kind        cascade;
 drop type if exists public.xp_reason          cascade;
 drop type if exists public.roadmap_source     cascade;
 drop type if exists public.task_resource_type cascade;

@@ -54,10 +54,12 @@ export async function copyMatrixAction(
 
     const supabase = await createClient();
 
-    // 1. Fetch requirements from source
+    // 1. Fetch requirements from source (including all sectoral & radar metadata)
     const { data: sourceReqs, error: fetchErr } = await supabase
       .from("career_path_skill_requirements")
-      .select("skill_id, required_level, importance")
+      .select(
+        "skill_id, required_level, importance, is_radar_axis, axis_order, axis_label_tr, demand_pct, mention_count, total_postings, priority_label, display_badge, is_core_checkup"
+      )
       .eq("career_path_id", validated.sourceCareerPathId);
 
     if (fetchErr || !sourceReqs) {

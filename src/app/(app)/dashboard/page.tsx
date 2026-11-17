@@ -159,6 +159,15 @@ export default async function DashboardPage() {
     universityRel?.name || profile.university_other || "Belirtilmemiş";
   const careerName = targetCareerRel?.name_tr || "Kariyer Alanı Seçilmedi";
 
+  const maxPostings = skillGaps.reduce(
+    (max, g) => Math.max(max, g.total_postings || 0),
+    0
+  );
+  const marketSummary =
+    maxPostings > 0
+      ? `Gerçek Sektör Verisi • ${maxPostings} İş İlanı Analizi`
+      : "Sektör Beklenti Matrisi • YBS Kariyer Standartları";
+
   return (
     <DashboardShell
       initialSprints={sprints}
@@ -180,6 +189,7 @@ export default async function DashboardPage() {
               fullName={profile.full_name}
               universityName={universityName}
               careerName={careerName}
+              marketSummary={marketSummary}
               currentStreak={profile.current_streak || 0}
               longestStreak={profile.longest_streak || 0}
               overallReadiness={overallReadiness}

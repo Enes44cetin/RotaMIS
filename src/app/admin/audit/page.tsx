@@ -59,6 +59,7 @@ export default async function AdminAuditPage() {
   });
 
   const actionLabels: Record<string, { label: string; color: string }> = {
+    bulk_market_import: { label: "CSV Sektör Verisi Yüklendi", color: "bg-emerald-100 text-emerald-800" },
     update_matrix: { label: "Sektör Matrisi Güncellendi", color: "bg-blue-100 text-blue-800" },
     copy_matrix: { label: "Sektör Matrisi Kopyalandı", color: "bg-purple-100 text-purple-800" },
     create_career_path: { label: "Yeni Kariyer Rotası Eklendi", color: "bg-emerald-100 text-emerald-800" },

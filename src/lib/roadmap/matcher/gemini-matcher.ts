@@ -138,7 +138,7 @@ GÖREVİN VE KURALLAR:
 5. Bu sprintte odaklanılan 1-3 becerinin UUID'sini 'focusSkillIds' dizisinde döndür.
 `;
 
-    // 4. Structured JSON Çıktısı iste
+    // 4. Structured JSON Çıktısı iste (10 sn üst sınır — aşılırsa rule-v1 yedek motoruna düşer)
     const ai = this.getAI();
     const modelName = process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL;
 
@@ -146,6 +146,7 @@ GÖREVİN VE KURALLAR:
       model: modelName,
       contents: prompt,
       config: {
+        abortSignal: AbortSignal.timeout(10_000),
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,

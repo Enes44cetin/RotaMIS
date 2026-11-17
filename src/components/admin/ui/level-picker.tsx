@@ -7,10 +7,10 @@ interface LevelPickerProps {
 }
 
 const levelLabels: Record<number, string> = {
-  1: "1 — Temel Bilgi (Teorik)",
-  2: "2 — Başlangıç (Basit Görevler)",
-  3: "3 — Orta (Bağımsız Uygulama)",
-  4: "4 — İleri (Karmaşık Projeler)",
+  1: "1 — Giriş / Farkındalık",
+  2: "2 — Aşina / Temel Düzey",
+  3: "3 — Uygulayıcı (Orta Düzey)",
+  4: "4 — Yetkin (Bağımsız Proje)",
   5: "5 — Uzman (Mimari & Liderlik)",
 };
 

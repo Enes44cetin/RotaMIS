@@ -15,6 +15,7 @@ import {
   ArrowLeft,
   LogOut,
   X,
+  FileSpreadsheet,
 } from "lucide-react";
 import { signOutAction } from "@/actions/auth";
 
@@ -37,6 +38,11 @@ const navSections = [
         href: "/admin/matrix",
         label: "Sektör Matrisi",
         icon: SlidersHorizontal,
+      },
+      {
+        href: "/admin/import",
+        label: "Sektör Verisi Yükle",
+        icon: FileSpreadsheet,
       },
     ],
   },

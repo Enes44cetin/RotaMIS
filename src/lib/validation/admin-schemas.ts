@@ -128,6 +128,15 @@ export const matrixRequirementItemSchema = z.object({
   skill_id: z.string().uuid(),
   required_level: z.coerce.number().int().min(1).max(5),
   importance: z.coerce.number().int().min(1).max(3).default(2),
+  is_radar_axis: z.boolean().optional().default(false),
+  axis_order: z.coerce.number().int().min(1).max(12).nullable().optional().default(null),
+  axis_label_tr: z.string().trim().max(80).nullable().optional().default(null),
+  demand_pct: z.coerce.number().min(0).max(100).nullable().optional().default(null),
+  mention_count: z.coerce.number().int().min(0).nullable().optional().default(null),
+  total_postings: z.coerce.number().int().min(0).nullable().optional().default(null),
+  priority_label: z.string().trim().max(60).nullable().optional().default(null),
+  display_badge: z.string().trim().max(120).nullable().optional().default(null),
+  is_core_checkup: z.boolean().optional().default(true),
 });
 
 export const saveMatrixSchema = z.object({
@@ -135,7 +144,42 @@ export const saveMatrixSchema = z.object({
   requirements: z.array(matrixRequirementItemSchema),
 });
 
-export type SaveMatrixFormData = z.infer<typeof saveMatrixSchema>;
+export type SaveMatrixFormData = z.input<typeof saveMatrixSchema>;
+
+// ---------- Market Bulk Import Schema ----------
+export const bulkImportSkillItemSchema = z.object({
+  slug: z.string().trim().min(1).max(100),
+  nameTr: z.string().trim().min(1).max(120),
+  axisLabelTr: z.string().trim().max(80).optional(),
+  category: z.enum(["technical", "business", "soft"]),
+  marketCategory: z.string().trim().max(80).optional(),
+  mentionCount: z.coerce.number().int().min(0).default(0),
+  totalPostings: z.coerce.number().int().min(0).default(0),
+  demandPct: z.coerce.number().min(0).max(100).default(0),
+  priorityLabel: z.string().trim().max(60).optional().default("Sık istenen"),
+  displayBadge: z.string().trim().max(120).optional().default(""),
+  requiredLevel: z.coerce.number().int().min(1).max(5).default(3),
+  importance: z.coerce.number().int().min(1).max(3).default(2),
+  isRadarAxis: z.boolean().default(false),
+  axisOrder: z.coerce.number().int().min(1).max(10).nullable().optional().default(null),
+  isCoreCheckup: z.boolean().default(true),
+  promptTr: z.string().trim().max(500).optional(),
+});
+
+export const bulkImportMarketSchema = z.object({
+  mode: z.enum(["existing_career", "new_career"]),
+  careerPathId: z.string().uuid().optional(),
+  newCareerNameTr: z.string().trim().max(120).optional(),
+  newCareerDescriptionTr: z.string().trim().max(500).optional(),
+  fileName: z.string().trim().max(200).optional().default("sektor_analizi.csv"),
+  marketScope: z.string().trim().max(60).default("Yerel"),
+  roleFilter: z.string().trim().max(80).default("Geliştirici"),
+  totalPostings: z.coerce.number().int().min(0).default(0),
+  scopeWarning: z.string().trim().max(500).nullable().optional().default(null),
+  skills: z.array(bulkImportSkillItemSchema).min(3, "En az 3 yetkinlik aktarılmalıdır"),
+});
+
+export type BulkImportMarketInput = z.input<typeof bulkImportMarketSchema>;
 
 export const copyMatrixSchema = z
   .object({

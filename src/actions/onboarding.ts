@@ -13,7 +13,7 @@ import type { DraftAssessment } from "@/types/database";
 export async function getOnboardingCatalog() {
   const supabase = await createClient();
 
-  const [universitiesRes, careerPathsRes, skillsRes] = await Promise.all([
+  const [universitiesRes, careerPathsRes, skillsRes, reqsRes] = await Promise.all([
     supabase
       .from("universities")
       .select("id, name, city")
@@ -21,20 +21,74 @@ export async function getOnboardingCatalog() {
       .order("sort_order"),
     supabase
       .from("career_paths")
-      .select("id, slug, name_tr, description_tr, icon")
+      .select("id, slug, name_tr, description_tr, icon, market_summary, total_postings")
       .eq("is_active", true)
       .order("sort_order"),
     supabase
       .from("skills")
-      .select("id, slug, category, name_tr, icon, sort_order")
+      .select("id, slug, category, name_tr, icon, sort_order, prompt_tr, level_anchors")
       .eq("is_active", true)
       .order("sort_order"),
+    supabase
+      .from("career_path_skill_requirements")
+      .select(
+        "career_path_id, skill_id, required_level, importance, is_radar_axis, axis_order, axis_label_tr, demand_pct, mention_count, total_postings, priority_label, display_badge, is_core_checkup"
+      ),
   ]);
+
+  // Fallback queries if Migration 13 sectoral columns have not been applied yet
+  let careerPaths = careerPathsRes.data;
+  if (careerPathsRes.error) {
+    const fallbackCp = await supabase
+      .from("career_paths")
+      .select("id, slug, name_tr, description_tr, icon")
+      .eq("is_active", true)
+      .order("sort_order");
+    careerPaths = (fallbackCp.data || []).map((c) => ({
+      ...c,
+      market_summary: null,
+      total_postings: null,
+    }));
+  }
+
+  let skills = skillsRes.data;
+  if (skillsRes.error) {
+    const fallbackSkills = await supabase
+      .from("skills")
+      .select("id, slug, category, name_tr, icon, sort_order")
+      .eq("is_active", true)
+      .order("sort_order");
+    skills = (fallbackSkills.data || []).map((s) => ({
+      ...s,
+      prompt_tr: null,
+      level_anchors: null,
+    }));
+  }
+
+  let careerRequirements = reqsRes.data;
+  if (reqsRes.error) {
+    const fallbackReqs = await supabase
+      .from("career_path_skill_requirements")
+      .select("career_path_id, skill_id, required_level, importance");
+    careerRequirements = (fallbackReqs.data || []).map((r) => ({
+      ...r,
+      is_radar_axis: false,
+      axis_order: null,
+      axis_label_tr: null,
+      demand_pct: null,
+      mention_count: null,
+      total_postings: null,
+      priority_label: null,
+      display_badge: null,
+      is_core_checkup: true,
+    }));
+  }
 
   return {
     universities: universitiesRes.data || [],
-    careerPaths: careerPathsRes.data || [],
-    skills: skillsRes.data || [],
+    careerPaths: careerPaths || [],
+    skills: skills || [],
+    careerRequirements: careerRequirements || [],
   };
 }
 
@@ -136,6 +190,15 @@ export async function saveOnboardingAssessment(rawPayload: OnboardingAssessmentI
 
   // 2. Upsert skill ratings FIRST while assessment is still draft (RLS requires draft status)
   if (payload.ratings && Object.keys(payload.ratings).length > 0) {
+    if (payload.isFinal) {
+      // Clean up any stale draft ratings from a previously selected career path
+      const adminClient = createAdminClient();
+      await adminClient
+        .from("assessment_skill_ratings")
+        .delete()
+        .eq("assessment_id", assessment.id);
+    }
+
     const ratingsArray = Object.entries(payload.ratings).map(([skillId, level]) => ({
       assessment_id: assessment.id,
       skill_id: skillId,
@@ -216,6 +279,8 @@ async function generateInitialRoadmap(
   // Deactivate any existing active roadmaps (only when initial onboarding or explicit career change finishes)
   await adminClient.from("roadmaps").update({ is_active: false }).eq("user_id", userId);
 
+  const roadmapSource = process.env.ROTAMIS_MATCHER_MODE === "gemini" ? "gemini" : "mock";
+
   // Create new permanent Journey roadmap
   const { data: roadmap, error: roadmapError } = await adminClient
     .from("roadmaps")
@@ -225,8 +290,8 @@ async function generateInitialRoadmap(
       career_path_id: careerPathId,
       title: "Hedef Odaklı Kişisel Kariyer Yolculuğu",
       summary:
-        "Beceri check-up sonuçlarına göre kendi hızında ilerleyebileceğin, eksiklerini kapattıkça yeni sprintlerle uzayan gelişim patikası.",
-      source: "mock",
+        "Sektör iş ilanı analizlerine göre kendi hızında ilerleyebileceğin, meslek radarındaki eksiklerini kapattıkça yeni sprintlerle uzayan gelişim patikası.",
+      source: roadmapSource,
     })
     .select("id")
     .single();

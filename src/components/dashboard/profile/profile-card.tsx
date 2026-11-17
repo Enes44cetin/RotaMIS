@@ -21,6 +21,7 @@ interface ProfileCardProps {
   fullName: string | null;
   universityName: string;
   careerName: string;
+  marketSummary?: string | null;
   currentStreak: number;
   longestStreak: number;
   overallReadiness: number;
@@ -34,6 +35,7 @@ export function ProfileCard({
   fullName,
   universityName,
   careerName,
+  marketSummary,
   currentStreak,
   longestStreak,
   overallReadiness,
@@ -159,7 +161,11 @@ export function ProfileCard({
                 overallReadiness={overallReadiness}
                 categoryScores={categoryScores}
               />
-              <ProfileRadar skillGaps={skillGaps} />
+              <ProfileRadar
+                skillGaps={skillGaps}
+                careerName={careerName}
+                marketSummary={marketSummary}
+              />
               <BadgeShelf allBadges={allBadges} userBadges={userBadges} />
             </motion.div>
           </div>
@@ -187,7 +193,11 @@ export function ProfileCard({
           categoryScores={categoryScores}
         />
 
-        <ProfileRadar skillGaps={skillGaps} />
+        <ProfileRadar
+          skillGaps={skillGaps}
+          careerName={careerName}
+          marketSummary={marketSummary}
+        />
 
         <BadgeShelf allBadges={allBadges} userBadges={userBadges} />
       </aside>

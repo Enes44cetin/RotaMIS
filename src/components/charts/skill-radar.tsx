@@ -13,10 +13,13 @@ import {
 
 interface SkillGapItem {
   name_tr: string;
+  axis_label_tr?: string | null;
   current_level: number;
   required_level: number;
   gap: number;
   category: string;
+  display_badge?: string | null;
+  priority_label?: string | null;
 }
 
 interface SkillRadarProps {
@@ -109,11 +112,13 @@ export function SkillRadar({ data, compact = false }: SkillRadarProps) {
     );
   }
 
-  // Format data for Recharts (limit to top skills if too many for clean display)
-  const chartData = data.slice(0, compact ? 8 : 10).map((d) => ({
-    skill: d.name_tr,
+  // Format data for Recharts (limit to 6 career-specific radar axes by default)
+  const chartData = data.slice(0, compact ? 6 : 8).map((d) => ({
+    skill: d.axis_label_tr || d.name_tr,
+    fullTitle: d.name_tr,
     "Senin Seviyen": d.current_level,
     "Sektör Beklentisi": d.required_level,
+    badge: d.display_badge || null,
   }));
 
   const maxLineChars = compact ? 13 : 18;

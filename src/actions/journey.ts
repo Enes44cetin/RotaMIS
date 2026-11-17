@@ -340,3 +340,54 @@ export async function submitMiniCheckup(
   };
 }
 
+/**
+ * Öğrencinin kariyer alanını değiştirmek veya sıfırdan sektörel değerlendirme (check-up)
+ * çözmek istediğinde mevcut aktif patikasını güvenli biçimde sıfırlayan sunucu aksiyonu.
+ */
+export async function resetStudentCareerJourney(): Promise<{
+  ok: boolean;
+  error?: string;
+}> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { ok: false, error: "Oturum açmanız gerekiyor." };
+  }
+
+  const adminClient = createAdminClient();
+
+  // Önce RPC ile dene (Migration 13 yüklendiyse)
+  const { error: rpcError } = await supabase.rpc(
+    "reset_student_career_journey"
+  );
+
+  if (rpcError) {
+    // Güvenli yedek: Admin client ile sıfırla
+    await adminClient
+      .from("assessments")
+      .delete()
+      .eq("user_id", user.id)
+      .eq("status", "draft");
+
+    await adminClient
+      .from("roadmaps")
+      .update({ is_active: false })
+      .eq("user_id", user.id)
+      .eq("is_active", true);
+
+    await adminClient
+      .from("profiles")
+      .update({ onboarding_completed: false })
+      .eq("id", user.id);
+  }
+
+  revalidatePath("/dashboard");
+  revalidatePath("/onboarding");
+
+  return { ok: true };
+}
+
+

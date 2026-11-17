@@ -49,6 +49,7 @@ export default async function OnboardingPage() {
         universities={catalog.universities}
         careerPaths={catalog.careerPaths}
         skills={catalog.skills}
+        careerRequirements={catalog.careerRequirements}
         initialDraft={existingDraft}
         initialUniversityId={profile?.university_id}
         initialUniversityOther={profile?.university_other}
