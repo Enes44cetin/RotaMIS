@@ -1,12 +1,23 @@
 "use server";
 
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { redirect } from "next/navigation";
-import { loginSchema, registerSchema } from "@/lib/validation/student-schemas";
+import {
+  loginSchema,
+  registerSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
+} from "@/lib/validation/student-schemas";
+import {
+  sanitizeRelativeNextPath,
+  translateAuthError,
+} from "@/lib/auth/error-messages";
 
 export interface AuthActionState {
   error?: string | null;
+  success?: string | null;
 }
 
 function extractFormData(
@@ -16,6 +27,25 @@ function extractFormData(
   if (arg1 instanceof FormData) return arg1;
   if (arg2 instanceof FormData) return arg2;
   return new FormData();
+}
+
+async function resolveSiteOrigin(): Promise<string> {
+  const configured = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (configured && /^https?:\/\//i.test(configured)) {
+    return configured.replace(/\/+$/, "");
+  }
+
+  const hdrs = await headers();
+  const forwardedHost = hdrs.get("x-forwarded-host") || hdrs.get("host");
+  const proto =
+    hdrs.get("x-forwarded-proto") ||
+    (process.env.NODE_ENV === "development" ? "http" : "https");
+
+  if (forwardedHost) {
+    return `${proto}://${forwardedHost}`.replace(/\/+$/, "");
+  }
+
+  return "http://localhost:3000";
 }
 
 export async function loginAction(
@@ -30,7 +60,9 @@ export async function loginAction(
   });
 
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message || "Lütfen e-posta ve şifrenizi girin." };
+    return {
+      error: parsed.error.issues[0]?.message || "Lütfen e-posta ve şifrenizi girin.",
+    };
   }
 
   const { email, password } = parsed.data;
@@ -72,16 +104,9 @@ export async function loginAction(
   }
 
   if (error) {
-    if (error.message.toLowerCase().includes("invalid login credentials")) {
-      return { error: "E-posta veya şifre hatalı." };
-    }
-    if (error.message.toLowerCase().includes("email not confirmed")) {
-      return {
-        error:
-          "E-posta adresiniz henüz doğrulanmamış. Lütfen gelen kutunuzdaki doğrulama bağlantısını onaylayın.",
-      };
-    }
-    return { error: error.message || "Giriş işlemi başarısız oldu." };
+    return {
+      error: translateAuthError(error.message, "Giriş işlemi başarısız oldu."),
+    };
   }
 
   if (!data?.user) {
@@ -96,12 +121,11 @@ export async function loginAction(
     .single();
 
   const rawRedirect = formData.get("redirectTo");
-  const safeRedirect =
-    typeof rawRedirect === "string" &&
-    rawRedirect.startsWith("/") &&
-    !rawRedirect.startsWith("//")
-      ? rawRedirect
-      : null;
+  const sanitizedRedirect =
+    typeof rawRedirect === "string"
+      ? sanitizeRelativeNextPath(rawRedirect, "")
+      : "";
+  const safeRedirect = sanitizedRedirect || null;
 
   if (safeRedirect?.startsWith("/admin") && profile?.role !== "admin") {
     return {
@@ -117,7 +141,9 @@ export async function loginAction(
     redirect("/onboarding");
   }
 
-  redirect(safeRedirect && !safeRedirect.startsWith("/admin") ? safeRedirect : "/dashboard");
+  redirect(
+    safeRedirect && !safeRedirect.startsWith("/admin") ? safeRedirect : "/dashboard"
+  );
 }
 
 export async function registerAction(
@@ -134,7 +160,9 @@ export async function registerAction(
   });
 
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message || "Lütfen tüm zorunlu alanları doldurun." };
+    return {
+      error: parsed.error.issues[0]?.message || "Lütfen tüm zorunlu alanları doldurun.",
+    };
   }
 
   const { email, password, fullName } = parsed.data;
@@ -155,15 +183,12 @@ export async function registerAction(
     });
 
     if (createError) {
-      if (
-        createError.message.toLowerCase().includes("already registered") ||
-        createError.message.toLowerCase().includes("unique")
-      ) {
-        return {
-          error: "Bu e-posta adresi ile kayıtlı bir hesap zaten var. Lütfen giriş yapın.",
-        };
-      }
-      return { error: createError.message || "Kayıt işlemi sırasında bir hata oluştu." };
+      return {
+        error: translateAuthError(
+          createError.message,
+          "Kayıt işlemi sırasında bir hata oluştu."
+        ),
+      };
     }
 
     const { error: signInError } = await supabase.auth.signInWithPassword({
@@ -182,10 +207,12 @@ export async function registerAction(
   }
 
   // Standard Production flow via Supabase Auth
+  const origin = await resolveSiteOrigin();
   const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
     email,
     password,
     options: {
+      emailRedirectTo: `${origin}/auth/callback?next=/onboarding`,
       data: {
         full_name: fullName,
         locale: "tr",
@@ -195,18 +222,15 @@ export async function registerAction(
   });
 
   if (signUpError) {
-    if (
-      signUpError.message.toLowerCase().includes("already registered") ||
-      signUpError.message.toLowerCase().includes("unique")
-    ) {
-      return {
-        error: "Bu e-posta adresi ile kayıtlı bir hesap zaten var. Lütfen giriş yapın.",
-      };
-    }
-    return { error: signUpError.message || "Kayıt işlemi sırasında bir hata oluştu." };
+    return {
+      error: translateAuthError(
+        signUpError.message,
+        "Kayıt işlemi sırasında bir hata oluştu."
+      ),
+    };
   }
 
-  // If session wasn't established automatically (e.g. email confirm disabled on server but session needs sign-in)
+  // If session wasn't established automatically (e.g. email confirmation required on server)
   if (!signUpData.session) {
     const { error: signInError } = await supabase.auth.signInWithPassword({
       email,
@@ -214,13 +238,98 @@ export async function registerAction(
     });
     if (signInError) {
       return {
-        error:
-          "Kaydınız alındı! Lütfen e-posta adresinize gönderilen doğrulama bağlantısını onaylayarak giriş yapın.",
+        success:
+          "Kaydınız alındı! E-posta adresinize gönderilen doğrulama bağlantısını onayladıktan sonra giriş yapabilirsiniz.",
       };
     }
   }
 
   redirect("/onboarding");
+}
+
+export async function requestPasswordResetAction(
+  prevStateOrFormData: AuthActionState | FormData | null | undefined,
+  maybeFormData?: FormData
+): Promise<AuthActionState> {
+  const formData = extractFormData(prevStateOrFormData, maybeFormData);
+
+  const parsed = forgotPasswordSchema.safeParse({
+    email: formData.get("email"),
+  });
+
+  if (!parsed.success) {
+    return {
+      error: parsed.error.issues[0]?.message || "Lütfen geçerli bir e-posta adresi girin.",
+    };
+  }
+
+  const supabase = await createClient();
+  const origin = await resolveSiteOrigin();
+  const { error } = await supabase.auth.resetPasswordForEmail(parsed.data.email, {
+    redirectTo: `${origin}/auth/callback?next=/reset-password`,
+  });
+
+  if (error) {
+    const lower = error.message.toLowerCase();
+    if (
+      lower.includes("only request this after") ||
+      lower.includes("rate limit") ||
+      lower.includes("too many requests") ||
+      lower.includes("over_email_send_rate_limit")
+    ) {
+      return { error: translateAuthError(error.message) };
+    }
+  }
+
+  // Hesap tarama (enumeration) koruması için her durumda aynı nötr onay mesajı döner
+  return {
+    success:
+      "Eğer bu e-posta adresiyle kayıtlı bir hesabın varsa, şifre sıfırlama bağlantısını gelen kutuna gönderdik.",
+  };
+}
+
+export async function updatePasswordAction(
+  prevStateOrFormData: AuthActionState | FormData | null | undefined,
+  maybeFormData?: FormData
+): Promise<AuthActionState> {
+  const formData = extractFormData(prevStateOrFormData, maybeFormData);
+
+  const parsed = resetPasswordSchema.safeParse({
+    password: formData.get("password"),
+    confirmPassword: formData.get("confirmPassword"),
+  });
+
+  if (!parsed.success) {
+    return {
+      error:
+        parsed.error.issues[0]?.message || "Lütfen geçerli bir yeni şifre belirleyin.",
+    };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return {
+      error:
+        "Şifre sıfırlama oturumun geçersiz veya süresi dolmuş. Lütfen yeni bir sıfırlama bağlantısı iste.",
+    };
+  }
+
+  const { error } = await supabase.auth.updateUser({
+    password: parsed.data.password,
+  });
+
+  if (error) {
+    return {
+      error: translateAuthError(error.message, "Şifren güncellenirken bir hata oluştu."),
+    };
+  }
+
+  await supabase.auth.signOut();
+  redirect("/login?reset=1");
 }
 
 export async function signOutAction() {

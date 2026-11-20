@@ -390,4 +390,79 @@ export async function resetStudentCareerJourney(): Promise<{
   return { ok: true };
 }
 
+/**
+ * Check-up tamamlandığı halde ilk patika/sprint oluşturulamadıysa (ör. geçici hata veya
+ * sonradan eklenen katalog kaynakları) öğrenciyi tekrar check-up'a sokmadan Sprint 1'i üretir.
+ */
+export async function retryInitialRoadmap(): Promise<AdvanceSprintResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { ok: false, error: "Oturum açmanız gerekiyor." };
+  }
+
+  const [{ data: activeRoadmap }, { data: latestAssessment }] = await Promise.all([
+    supabase
+      .from("roadmaps")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("is_active", true)
+      .maybeSingle(),
+    supabase
+      .from("v_latest_assessment")
+      .select("id, career_path_id")
+      .eq("user_id", user.id)
+      .maybeSingle(),
+  ]);
+
+  let roadmapId = activeRoadmap?.id ?? null;
+
+  if (!roadmapId) {
+    if (!latestAssessment?.career_path_id) {
+      return {
+        ok: false,
+        error:
+          "Tamamlanmış beceri check-up verisi bulunamadı. Lütfen kariyer hedefini kontrol et.",
+      };
+    }
+
+    const adminClient = createAdminClient();
+    const roadmapSource =
+      process.env.ROTAMIS_MATCHER_MODE === "gemini" ? "gemini" : "mock";
+
+    const { data: createdRoadmap, error: createError } = await adminClient
+      .from("roadmaps")
+      .insert({
+        user_id: user.id,
+        assessment_id: latestAssessment.id,
+        career_path_id: latestAssessment.career_path_id,
+        title: "Hedef Odaklı Kişisel Kariyer Yolculuğu",
+        summary:
+          "Sektör iş ilanı analizlerine göre kendi hızında ilerleyebileceğin, meslek radarındaki eksiklerini kapattıkça yeni sprintlerle uzayan gelişim patikası.",
+        source: roadmapSource,
+      })
+      .select("id")
+      .single();
+
+    if (createError || !createdRoadmap) {
+      return {
+        ok: false,
+        error: "Yol haritası başlatılamadı. Lütfen biraz sonra tekrar dene.",
+      };
+    }
+
+    roadmapId = createdRoadmap.id;
+  }
+
+  const res = await createNextSprintForUser(user.id, roadmapId);
+
+  revalidatePath("/dashboard");
+  revalidatePath("/admin");
+
+  return res;
+}
+
 

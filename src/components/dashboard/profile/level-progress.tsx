@@ -6,15 +6,11 @@ import { useDashboard } from "../dashboard-shell";
 import { calculateLevelStats } from "@/lib/gamification";
 
 interface LevelProgressProps {
-  currentStreak: number;
   longestStreak: number;
 }
 
-export function LevelProgress({
-  currentStreak,
-  longestStreak,
-}: LevelProgressProps) {
-  const { totalXp, tasks } = useDashboard();
+export function LevelProgress({ longestStreak }: LevelProgressProps) {
+  const { totalXp, tasks, effectiveStreak, streakStatus } = useDashboard();
   const prefersReducedMotion = useReducedMotion();
   const stats = calculateLevelStats(totalXp);
 
@@ -78,10 +74,12 @@ export function LevelProgress({
           </div>
           <div className="min-w-0">
             <div className="text-sm font-black text-amber-950 tabular-nums leading-tight">
-              {currentStreak} Gün
+              {effectiveStreak} Gün
             </div>
             <div className="text-[10px] font-semibold text-amber-700/80 truncate">
-              Rekor: {longestStreak} gün
+              {streakStatus === "at_risk"
+                ? "Bugün koru!"
+                : `Rekor: ${longestStreak} gün`}
             </div>
           </div>
         </div>

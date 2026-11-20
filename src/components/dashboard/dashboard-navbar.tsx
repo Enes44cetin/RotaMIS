@@ -1,23 +1,29 @@
 "use client";
 
 import Link from "next/link";
-import { Compass, Briefcase, Flame, Award, LogOut, Shield } from "lucide-react";
+import {
+  Compass,
+  Briefcase,
+  Flame,
+  Award,
+  LogOut,
+  Shield,
+  Settings,
+} from "lucide-react";
 import { signOutAction } from "@/actions/auth";
 import { useDashboard } from "./dashboard-shell";
 import { calculateLevelStats } from "@/lib/gamification";
 
 interface DashboardNavbarProps {
   careerName: string;
-  currentStreak: number;
   isAdmin?: boolean;
 }
 
 export function DashboardNavbar({
   careerName,
-  currentStreak,
   isAdmin = false,
 }: DashboardNavbarProps) {
-  const { totalXp } = useDashboard();
+  const { totalXp, effectiveStreak, streakStatus, openSettings } = useDashboard();
   const levelStats = calculateLevelStats(totalXp);
 
   return (
@@ -28,7 +34,7 @@ export function DashboardNavbar({
             <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-[#0B1F4D] to-[#2F5BFF] flex items-center justify-center text-white shadow-md shadow-blue-900/20 group-hover:scale-105 transition-transform">
               <Compass className="w-5 h-5" />
             </div>
-            <span className="text-xl sm:text-2xl font-black text-[#0B1F4D] tracking-tight leading-none">
+            <span className="text-lg sm:text-2xl font-black text-[#0B1F4D] tracking-tight leading-none">
               Rota<span className="text-[#2F5BFF]">MIS</span>
             </span>
           </Link>
@@ -54,12 +60,28 @@ export function DashboardNavbar({
 
           {/* Daily Streak */}
           <div
-            title="Günlük Öğrenme Serisi"
-            className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full bg-amber-50 border border-amber-200/80 text-amber-900 text-xs font-bold"
+            title={
+              streakStatus === "at_risk"
+                ? "Serin tehlikede! Korumak için bugün bir görev tamamla."
+                : "Günlük Öğrenme Serisi"
+            }
+            className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full border text-xs font-bold ${
+              streakStatus === "at_risk"
+                ? "bg-orange-50 border-orange-300 text-orange-900"
+                : effectiveStreak > 0
+                ? "bg-amber-50 border-amber-200/80 text-amber-900"
+                : "bg-slate-50 border-slate-200 text-slate-500"
+            }`}
           >
-            <Flame className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-500 fill-amber-500 shrink-0" />
+            <Flame
+              className={`w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 ${
+                effectiveStreak > 0
+                  ? "text-amber-500 fill-amber-500"
+                  : "text-slate-400"
+              }`}
+            />
             <span>
-              {currentStreak}
+              {effectiveStreak}
               <span className="hidden sm:inline"> Gün</span>
             </span>
           </div>
@@ -72,6 +94,17 @@ export function DashboardNavbar({
               Lvl {levelStats.level}
             </span>
           </div>
+
+          {/* Profile & Tempo Settings (mobil şeritte zaten olduğu için >= sm gösterilir) */}
+          <button
+            type="button"
+            onClick={openSettings}
+            title="Profil ve Çalışma Temposu Ayarları"
+            aria-label="Profil ve Tempo Ayarları"
+            className="hidden sm:inline-flex p-2 rounded-xl text-slate-500 hover:text-[#2F5BFF] hover:bg-blue-50 border border-transparent hover:border-blue-100 transition-colors cursor-pointer"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
 
           {/* Logout */}
           <form action={signOutAction}>

@@ -8,9 +8,11 @@ import {
   ArrowLeftRight,
   Loader2,
   AlertTriangle,
+  Settings,
 } from "lucide-react";
 import { toast } from "sonner";
 import { resetStudentCareerJourney } from "@/actions/journey";
+import { useDashboard } from "../dashboard-shell";
 
 interface ProfileGreetingProps {
   fullName: string | null;
@@ -24,6 +26,7 @@ export function ProfileGreeting({
   careerName,
 }: ProfileGreetingProps) {
   const router = useRouter();
+  const { openSettings } = useDashboard();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [isResetting, startResetTransition] = useTransition();
 
@@ -85,9 +88,20 @@ export function ProfileGreeting({
               <span>Hedef Değiştir</span>
             </button>
           </div>
-          <div className="flex items-center gap-2 text-blue-200/80">
-            <GraduationCap className="w-3.5 h-3.5 text-blue-300 shrink-0" />
-            <span className="truncate">{universityName}</span>
+          <div className="flex items-center justify-between gap-2 text-blue-200/80">
+            <div className="flex items-center gap-2 min-w-0">
+              <GraduationCap className="w-3.5 h-3.5 text-blue-300 shrink-0" />
+              <span className="truncate">{universityName}</span>
+            </div>
+            <button
+              type="button"
+              onClick={openSettings}
+              title="Ad, üniversite ve haftalık çalışma temposunu düzenle"
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white/10 hover:bg-white/20 border border-white/15 text-[10px] font-semibold text-blue-100 transition-colors shrink-0 cursor-pointer"
+            >
+              <Settings className="w-2.5 h-2.5" />
+              <span>Ayarlar</span>
+            </button>
           </div>
         </div>
       </div>

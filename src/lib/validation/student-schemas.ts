@@ -69,5 +69,84 @@ export const miniCheckupSchema = z.object({
 
 export type MiniCheckupInput = z.infer<typeof miniCheckupSchema>;
 
+export const forgotPasswordSchema = z.object({
+  email: z.string().trim().email("Lütfen geçerli bir e-posta adresi girin."),
+});
+
+export const resetPasswordSchema = z
+  .object({
+    password: z
+      .string()
+      .min(6, "Yeni şifreniz en az 6 karakter olmalıdır.")
+      .max(128, "Şifreniz çok uzun."),
+    confirmPassword: z.string().min(1, "Lütfen şifrenizi tekrar girin."),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Girdiğiniz şifreler birbiriyle eşleşmiyor.",
+    path: ["confirmPassword"],
+  });
+
+export const skipTaskSchema = z.object({
+  taskId: z.string().uuid("Geçersiz görev kimliği."),
+});
+
+export const unskipTaskSchema = z.object({
+  taskId: z.string().uuid("Geçersiz görev kimliği."),
+});
+
+export const reportBrokenResourceSchema = z.object({
+  taskId: z.string().uuid("Geçersiz görev kimliği."),
+  resourceId: z.string().uuid("Geçersiz kaynak kimliği.").nullable().optional(),
+  reason: z.enum(["broken_link", "outdated", "other"], {
+    error: "Lütfen bir bildirim nedeni seçin.",
+  }),
+  note: z
+    .string()
+    .trim()
+    .max(500, "Açıklama notu en fazla 500 karakter olabilir.")
+    .optional(),
+  skipAfterReport: z.boolean().optional().default(true),
+});
+
+export type ReportBrokenResourceInput = z.input<typeof reportBrokenResourceSchema>;
+
+export const studentSettingsSchema = z
+  .object({
+    fullName: z
+      .string()
+      .trim()
+      .min(2, "Ad Soyad en az 2 karakter olmalıdır.")
+      .max(100, "Ad Soyad en fazla 100 karakter olabilir."),
+    universityId: z.union([
+      z.literal("other"),
+      z.string().uuid("Geçerli bir üniversite seçiniz."),
+    ]),
+    universityOther: z
+      .string()
+      .trim()
+      .max(150, "Üniversite adı en fazla 150 karakter olabilir.")
+      .optional(),
+    weeklyHours: z.coerce
+      .number()
+      .int()
+      .min(2, "Haftalık çalışma süresi en az 2 saat olmalıdır.")
+      .max(40, "Haftalık çalışma süresi en fazla 40 saat olabilir."),
+    learningStyle: z.enum(["video", "reading", "hands_on", "mixed"], {
+      error: "Geçerli bir öğrenme stili seçiniz.",
+    }),
+  })
+  .refine(
+    (data) =>
+      data.universityId !== "other" ||
+      (typeof data.universityOther === "string" &&
+        data.universityOther.trim().length >= 2),
+    {
+      message: "Lütfen üniversite adınızı en az 2 karakter olarak yazın.",
+      path: ["universityOther"],
+    }
+  );
+
+export type StudentSettingsInput = z.input<typeof studentSettingsSchema>;
+
 
 

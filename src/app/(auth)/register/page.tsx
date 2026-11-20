@@ -1,14 +1,24 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import Link from "next/link";
 import { registerAction, type AuthActionState } from "@/actions/auth";
-import { UserPlus, Mail, Lock, User, AlertCircle, Loader2 } from "lucide-react";
+import { KvkkModal } from "@/components/auth/kvkk-modal";
+import {
+  UserPlus,
+  Mail,
+  Lock,
+  User,
+  AlertCircle,
+  CheckCircle2,
+  Loader2,
+} from "lucide-react";
 
-const initialState: AuthActionState = { error: null };
+const initialState: AuthActionState = { error: null, success: null };
 
 export default function RegisterPage() {
   const [state, formAction, isPending] = useActionState(registerAction, initialState);
+  const [kvkkOpen, setKvkkOpen] = useState(false);
 
   return (
     <div className="bg-white p-8 sm:p-10 rounded-3xl border border-slate-200/80 shadow-xl shadow-slate-200/50">
@@ -25,6 +35,16 @@ export default function RegisterPage() {
         <div className="mb-6 p-4 rounded-xl bg-red-50 border border-red-200/80 text-red-700 text-xs font-medium flex items-center gap-2.5">
           <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
           <span>{state.error}</span>
+        </div>
+      )}
+
+      {state?.success && (
+        <div className="mb-6 p-4 rounded-xl bg-emerald-50 border border-emerald-200/90 text-emerald-800 text-xs font-medium flex items-start gap-2.5">
+          <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-bold text-emerald-900">Kaydın Başarıyla Alındı</p>
+            <p className="leading-relaxed">{state.success}</p>
+          </div>
         </div>
       )}
 
@@ -88,9 +108,19 @@ export default function RegisterPage() {
               className="mt-0.5 rounded border-slate-300 text-[#2F5BFF] focus:ring-blue-500 cursor-pointer"
             />
             <span>
-              <strong className="text-slate-800">KVKK Aydınlatma Metni</strong>&apos;ni
-              okudum, kişisel kariyer ve beceri verilerimin yol haritası oluşturulması
-              amacıyla işlenmesini onaylıyorum.
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setKvkkOpen(true);
+                }}
+                className="font-bold text-[#2F5BFF] hover:text-blue-700 underline underline-offset-2 cursor-pointer"
+              >
+                KVKK Aydınlatma Metni
+              </button>
+              &apos;ni okudum, kişisel kariyer ve beceri verilerimin yol haritası
+              oluşturulması amacıyla işlenmesini onaylıyorum.
             </span>
           </label>
         </div>
@@ -125,6 +155,7 @@ export default function RegisterPage() {
           </Link>
         </p>
       </div>
+      <KvkkModal open={kvkkOpen} onClose={() => setKvkkOpen(false)} />
     </div>
   );
 }

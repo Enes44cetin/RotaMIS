@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { Radar, Award, X, ChevronRight, Flame } from "lucide-react";
+import { Radar, Award, X, ChevronRight, Flame, Settings } from "lucide-react";
 import { ProfileGreeting } from "./profile-greeting";
 import { LevelProgress } from "./level-progress";
 import { ReadinessRing } from "./readiness-ring";
@@ -22,7 +22,6 @@ interface ProfileCardProps {
   universityName: string;
   careerName: string;
   marketSummary?: string | null;
-  currentStreak: number;
   longestStreak: number;
   overallReadiness: number;
   categoryScores: CategoryScoreRow[];
@@ -36,7 +35,6 @@ export function ProfileCard({
   universityName,
   careerName,
   marketSummary,
-  currentStreak,
   longestStreak,
   overallReadiness,
   categoryScores,
@@ -45,7 +43,7 @@ export function ProfileCard({
   userBadges,
 }: ProfileCardProps) {
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
-  const { totalXp } = useDashboard();
+  const { totalXp, effectiveStreak, openSettings } = useDashboard();
   const prefersReducedMotion = useReducedMotion();
   const stats = calculateLevelStats(totalXp);
 
@@ -80,11 +78,19 @@ export function ProfileCard({
           <div className="flex items-center gap-1.5 shrink-0">
             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold">
               <Flame className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-              {currentStreak}
+              {effectiveStreak}
             </span>
             <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-blue-50 border border-blue-200 text-[#2F5BFF] text-xs font-extrabold tabular-nums">
               %{overallReadiness} Hazır
             </span>
+            <button
+              type="button"
+              onClick={openSettings}
+              aria-label="Profil ve Tempo Ayarları"
+              className="p-1.5 rounded-full bg-slate-50 border border-slate-200 text-slate-500 hover:text-[#2F5BFF] cursor-pointer"
+            >
+              <Settings className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
 
@@ -183,10 +189,7 @@ export function ProfileCard({
           careerName={careerName}
         />
 
-        <LevelProgress
-          currentStreak={currentStreak}
-          longestStreak={longestStreak}
-        />
+        <LevelProgress longestStreak={longestStreak} />
 
         <ReadinessRing
           overallReadiness={overallReadiness}

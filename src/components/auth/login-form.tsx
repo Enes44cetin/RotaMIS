@@ -8,23 +8,28 @@ import {
   Mail,
   Lock,
   AlertCircle,
+  CheckCircle2,
   Loader2,
   ShieldAlert,
   ArrowLeft,
 } from "lucide-react";
 
-const initialState: AuthActionState = { error: null };
+const initialState: AuthActionState = { error: null, success: null };
 
 interface LoginFormProps {
   redirectTo?: string;
   isNotAdminRedirect?: boolean;
   currentSignedInEmail?: string | null;
+  resetSuccess?: boolean;
+  linkError?: boolean;
 }
 
 export function LoginForm({
   redirectTo,
   isNotAdminRedirect = false,
   currentSignedInEmail,
+  resetSuccess = false,
+  linkError = false,
 }: LoginFormProps) {
   const [state, formAction, isPending] = useActionState(loginAction, initialState);
   const isAdminTarget = Boolean(redirectTo?.startsWith("/admin"));
@@ -84,6 +89,23 @@ export function LoginForm({
         </div>
       )}
 
+      {resetSuccess && (
+        <div className="mb-6 p-4 rounded-xl bg-emerald-50 border border-emerald-200/90 text-emerald-800 text-xs font-medium flex items-center gap-2.5">
+          <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+          <span>Şifren başarıyla güncellendi! Yeni şifrenle giriş yapabilirsin.</span>
+        </div>
+      )}
+
+      {linkError && (
+        <div className="mb-6 p-4 rounded-xl bg-amber-50 border border-amber-200/90 text-amber-900 text-xs font-medium flex items-center gap-2.5">
+          <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
+          <span>
+            Doğrulama veya şifre sıfırlama bağlantısının süresi dolmuş. Lütfen yeni bir
+            bağlantı iste.
+          </span>
+        </div>
+      )}
+
       {state?.error && (
         <div className="mb-6 p-4 rounded-xl bg-red-50 border border-red-200/80 text-red-700 text-xs font-medium flex items-center gap-2.5">
           <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
@@ -119,6 +141,12 @@ export function LoginForm({
             <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
               Şifre
             </label>
+            <Link
+              href="/forgot-password"
+              className="text-xs font-bold text-[#2F5BFF] hover:text-blue-700 transition-colors"
+            >
+              Şifremi unuttum
+            </Link>
           </div>
           <div className="relative">
             <Lock className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />

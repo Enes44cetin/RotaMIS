@@ -192,3 +192,26 @@ export interface MiniCheckupSubmitResult {
   xpAwarded?: number;
   deltas?: MiniCheckupSkillDelta[];
 }
+
+export type ResourceReportReason = "broken_link" | "outdated" | "other";
+
+export type EffectiveStreakStatus = "active_today" | "at_risk" | "broken";
+
+export interface EffectiveStreakInfo {
+  effectiveStreak: number;
+  status: EffectiveStreakStatus;
+}
+
+export interface UniversityOption {
+  id: string;
+  name: string;
+  city: string | null;
+}
+
+export interface StudentSettingsInitial {
+  fullName: string;
+  universityId: string | null;
+  universityOther: string | null;
+  weeklyHours: number;
+  learningStyle: LearningStyle;
+}

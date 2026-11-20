@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { createClient } from "@/lib/supabase/server";
 import { StatCard } from "@/components/admin/ui/stat-card";
+import { ResolveReportsButton } from "@/components/admin/resources/resolve-reports-button";
 import {
   Users,
   CheckCircle2,
@@ -13,6 +14,7 @@ import {
   TrendingUp,
   SlidersHorizontal,
   GraduationCap,
+  Link2Off,
 } from "lucide-react";
 
 export default async function AdminOverviewPage() {
@@ -31,6 +33,7 @@ export default async function AdminOverviewPage() {
     { data: careerPaths },
     { data: rawGaps },
     { data: rawCatalogDemands },
+    { data: rawResourceReports, error: resourceReportsError },
   ] = await Promise.all([
     supabase
       .from("profiles")
@@ -85,6 +88,21 @@ export default async function AdminOverviewPage() {
       )
       .eq("resolved", false)
       .limit(100),
+    supabase
+      .from("resource_reports")
+      .select(
+        `
+        id,
+        user_id,
+        resource_id,
+        reason,
+        note,
+        resource:learning_resources(id, title, url)
+      `
+      )
+      .eq("resolved", false)
+      .order("created_at", { ascending: false })
+      .limit(100),
   ]);
 
   // Exclude admin accounts (e.g. dual student-turned-admin accounts) from student analytics
@@ -107,6 +125,37 @@ export default async function AdminOverviewPage() {
         .filter((n): n is string => Boolean(n))
     )
   );
+
+  // Kırık link / kaynak bildirimleri (Migration 14 henüz yoksa güvenli boş liste)
+  const openReportGroups = new Map<
+    string,
+    { resourceId: string; title: string; count: number; lastReason: string }
+  >();
+  if (!resourceReportsError && rawResourceReports) {
+    const typedReports = rawResourceReports as unknown as Array<{
+      id: string;
+      user_id: string;
+      resource_id: string | null;
+      reason: string;
+      resource: { id: string; title: string; url: string } | null;
+    }>;
+
+    for (const rep of typedReports) {
+      if (!rep.resource_id || !rep.resource) continue;
+      const existing = openReportGroups.get(rep.resource_id);
+      if (existing) {
+        existing.count += 1;
+      } else {
+        openReportGroups.set(rep.resource_id, {
+          resourceId: rep.resource_id,
+          title: rep.resource.title,
+          count: 1,
+          lastReason: rep.reason,
+        });
+      }
+    }
+  }
+  const reportedResources = Array.from(openReportGroups.values());
 
   const pathsWithoutMatrix = (careerPaths || []).filter(
     (p) =>
@@ -288,6 +337,58 @@ export default async function AdminOverviewPage() {
                 >
                   Kaynak Ekle
                 </Link>
+              </div>
+            )}
+
+            {/* Alert: Reported broken/outdated resources */}
+            {reportedResources.length > 0 && (
+              <div className="p-4 rounded-2xl bg-amber-50/85 border border-amber-200/90 space-y-3">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 mt-0.5">
+                      <Link2Off className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-bold text-amber-950">
+                        Öğrencilerden {reportedResources.length} Kaynak İçin Link /
+                        İçerik Bildirimi Var
+                      </h3>
+                      <p className="text-xs text-amber-800/90 mt-0.5">
+                        Aşağıdaki kaynaklar kırık veya güncel değil olarak bildirildi.
+                        Kaynağı güncellediğinizde bildirimler otomatik kapanır.
+                      </p>
+                    </div>
+                  </div>
+
+                  <Link
+                    href="/admin/resources"
+                    className="px-3 py-1.5 rounded-lg bg-amber-600 text-white font-bold text-xs hover:bg-amber-700 shrink-0 transition-colors"
+                  >
+                    Kataloğa Git
+                  </Link>
+                </div>
+
+                <div className="space-y-1.5 pl-11">
+                  {reportedResources.slice(0, 5).map((item) => (
+                    <div
+                      key={item.resourceId}
+                      className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-white/90 border border-amber-200/70 text-xs"
+                    >
+                      <div className="min-w-0 flex items-center gap-2">
+                        <span className="font-bold text-slate-800 truncate">
+                          {item.title}
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-900 text-[10px] font-extrabold shrink-0">
+                          {item.count} bildirim
+                        </span>
+                      </div>
+                      <ResolveReportsButton
+                        resourceId={item.resourceId}
+                        resourceTitle={item.title}
+                      />
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 

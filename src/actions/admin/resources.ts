@@ -45,6 +45,21 @@ function computeEffectiveXp(
   return Math.min(100, Math.max(15, Math.round(hours * 7 + difficulty * 5)));
 }
 
+async function markResourceReportsResolved(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  resourceId: string
+) {
+  try {
+    await supabase
+      .from("resource_reports")
+      .update({ resolved: true })
+      .eq("resource_id", resourceId)
+      .eq("resolved", false);
+  } catch {
+    // Migration 14 henüz çalıştırılmadıysa sessizce geç
+  }
+}
+
 export async function createResourceAction(data: ResourceFormData) {
   try {
     const session = await requireAdmin();
@@ -210,6 +225,8 @@ export async function updateResourceAction(id: string, data: ResourceFormData) {
         .in("status", ["pending", "in_progress"]),
     ]);
 
+    await markResourceReportsResolved(supabase, validId);
+
     await logAdminAction({
       action: "update_resource",
       entityType: "resource",
@@ -244,6 +261,10 @@ export async function toggleStatusResourceAction(
 
     if (error) return { success: false, error: error.message };
 
+    if (status === "archived") {
+      await markResourceReportsResolved(supabase, validId);
+    }
+
     await logAdminAction({
       action: `set_resource_${status}`,
       entityType: "resource",
@@ -252,6 +273,7 @@ export async function toggleStatusResourceAction(
     });
 
     revalidatePath("/admin/resources");
+    revalidatePath("/admin");
     revalidatePath("/dashboard");
     return { success: true };
   } catch (err: unknown) {
@@ -265,6 +287,8 @@ export async function deleteResourceAction(id: string) {
     const session = await requireAdmin();
     const validId = uuidSchema.parse(id);
     const supabase = await createClient();
+
+    await markResourceReportsResolved(supabase, validId);
 
     const { error } = await supabase
       .from("learning_resources")
@@ -280,10 +304,46 @@ export async function deleteResourceAction(id: string) {
     });
 
     revalidatePath("/admin/resources");
+    revalidatePath("/admin");
     revalidatePath("/dashboard");
     return { success: true };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Silme işlemi başarısız";
+    return { success: false, error: msg };
+  }
+}
+
+export async function resolveResourceReportsAction(resourceId: string) {
+  try {
+    const session = await requireAdmin();
+    const validId = uuidSchema.parse(resourceId);
+    const supabase = await createClient();
+
+    const { error } = await supabase
+      .from("resource_reports")
+      .update({ resolved: true })
+      .eq("resource_id", validId)
+      .eq("resolved", false);
+
+    if (error) {
+      return {
+        success: false,
+        error: "Bildirimler kapatılamadı: " + error.message,
+      };
+    }
+
+    await logAdminAction({
+      action: "resolve_resource_reports",
+      entityType: "resource",
+      entityId: validId,
+      adminId: session.user.id,
+    });
+
+    revalidatePath("/admin");
+    revalidatePath("/admin/resources");
+    return { success: true };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "İşlem başarısız";
     return { success: false, error: msg };
   }
 }

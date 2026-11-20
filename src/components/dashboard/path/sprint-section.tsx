@@ -50,7 +50,11 @@ export function SprintSection({
         {sprint.tasks.map((t) => (
           <li key={t.id}>
             {t.title} — {t.xp_reward} XP —{" "}
-            {t.status === "completed" ? "Tamamlandı" : "Aktif"}
+            {t.status === "completed"
+              ? "Tamamlandı"
+              : t.status === "skipped"
+              ? "Atlandı"
+              : "Aktif"}
           </li>
         ))}
       </ol>

@@ -4,16 +4,29 @@ import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { DashboardNavbar } from "@/components/dashboard/dashboard-navbar";
 import { ProfileCard } from "@/components/dashboard/profile/profile-card";
 import { CareerPath } from "@/components/dashboard/path/career-path";
+import { computeEffectiveStreak } from "@/lib/gamification";
 import type {
   BadgeCatalogItem,
   CategoryScoreRow,
+  LearningStyle,
   SkillGapRow,
   SprintRow,
+  StudentSettingsInitial,
   TaskRow,
+  UniversityOption,
   UserBadgeWithDetails,
 } from "@/types/database";
 
-export default async function DashboardPage() {
+interface DashboardPageProps {
+  searchParams: Promise<{
+    welcome?: string;
+  }>;
+}
+
+export default async function DashboardPage({
+  searchParams,
+}: DashboardPageProps) {
+  const params = await searchParams;
   const supabase = await createClient();
   const {
     data: { user },
@@ -33,6 +46,8 @@ export default async function DashboardPage() {
     { data: rawMiniAssessments },
     { data: rawUserBadges },
     { data: rawAllBadges },
+    { data: rawUniversities },
+    { data: latestAssessment },
   ] = await Promise.all([
     supabase
       .from("profiles")
@@ -42,10 +57,12 @@ export default async function DashboardPage() {
         full_name,
         email,
         role,
+        university_id,
         university_other,
         total_xp,
         current_streak,
         longest_streak,
+        last_activity_date,
         onboarding_completed,
         university:universities(name),
         target_career:career_paths!profiles_target_career_path_id_fkey(name_tr, icon)
@@ -105,6 +122,16 @@ export default async function DashboardPage() {
       )
       .eq("is_active", true)
       .order("sort_order", { ascending: true }),
+    supabase
+      .from("universities")
+      .select("id, name, city")
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true }),
+    supabase
+      .from("v_latest_assessment")
+      .select("weekly_hours, learning_style")
+      .eq("user_id", user.id)
+      .maybeSingle(),
   ]);
 
   if (!profile) {
@@ -124,6 +151,7 @@ export default async function DashboardPage() {
   const userBadges =
     (rawUserBadges as unknown as UserBadgeWithDetails[]) || [];
   const allBadges = (rawAllBadges as unknown as BadgeCatalogItem[]) || [];
+  const universities = (rawUniversities as unknown as UniversityOption[]) || [];
 
   const rawTasks = (activeRoadmap?.tasks as unknown as TaskRow[]) || [];
   const tasks = [...rawTasks].sort(
@@ -168,17 +196,32 @@ export default async function DashboardPage() {
       ? `Gerçek Sektör Verisi • ${maxPostings} İş İlanı Analizi`
       : "Sektör Beklenti Matrisi • YBS Kariyer Standartları";
 
+  const streakInfo = computeEffectiveStreak(
+    profile.current_streak,
+    profile.last_activity_date
+  );
+
+  const settingsInitial: StudentSettingsInitial = {
+    fullName: profile.full_name || "",
+    universityId: profile.university_id ?? null,
+    universityOther: profile.university_other ?? null,
+    weeklyHours: latestAssessment?.weekly_hours ?? 10,
+    learningStyle:
+      (latestAssessment?.learning_style as LearningStyle | null) || "hands_on",
+  };
+
   return (
     <DashboardShell
       initialSprints={sprints}
       initialCompletedMiniSprintIds={completedMiniSprintIds}
       initialTasks={tasks}
       initialTotalXp={profile.total_xp || 0}
+      initialEffectiveStreak={streakInfo.effectiveStreak}
+      initialStreakStatus={streakInfo.status}
     >
       <div className="min-h-screen bg-[#F7F9FC] flex flex-col">
         <DashboardNavbar
           careerName={careerName}
-          currentStreak={profile.current_streak || 0}
           isAdmin={profile.role === "admin"}
         />
 
@@ -190,7 +233,6 @@ export default async function DashboardPage() {
               universityName={universityName}
               careerName={careerName}
               marketSummary={marketSummary}
-              currentStreak={profile.current_streak || 0}
               longestStreak={profile.longest_streak || 0}
               overallReadiness={overallReadiness}
               categoryScores={categoryScores}
@@ -202,7 +244,12 @@ export default async function DashboardPage() {
             <CareerPath
               roadmapTitle={activeRoadmap?.title}
               roadmapSummary={activeRoadmap?.summary}
+              careerName={careerName}
+              overallReadiness={overallReadiness}
               skillGaps={skillGaps}
+              showWelcomeModal={params.welcome === "1"}
+              universities={universities}
+              settingsInitial={settingsInitial}
             />
           </div>
         </main>

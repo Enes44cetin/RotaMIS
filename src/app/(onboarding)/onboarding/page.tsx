@@ -4,6 +4,7 @@ import { Shield, ArrowLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getOnboardingCatalog, getExistingDraftAssessment } from "@/actions/onboarding";
 import { OnboardingWizard } from "@/components/onboarding/wizard";
+import { OnboardingAlreadyCompletedCard } from "@/components/onboarding/already-completed-card";
 
 export default async function OnboardingPage() {
   const supabase = await createClient();
@@ -19,12 +20,35 @@ export default async function OnboardingPage() {
   const [{ data: profile }, catalog, existingDraft] = await Promise.all([
     supabase
       .from("profiles")
-      .select("role, university_id, university_other, target_career_path_id")
+      .select(
+        `
+        role,
+        onboarding_completed,
+        university_id,
+        university_other,
+        target_career_path_id,
+        target_career:career_paths!profiles_target_career_path_id_fkey(name_tr)
+      `
+      )
       .eq("id", user.id)
       .maybeSingle(),
     getOnboardingCatalog(),
     getExistingDraftAssessment(user.id),
   ]);
+
+  const targetCareerRel = profile?.target_career as unknown as {
+    name_tr: string;
+  } | null;
+
+  if (profile?.onboarding_completed && profile.role !== "admin") {
+    return (
+      <div className="min-h-screen bg-[#F7F9FC]">
+        <OnboardingAlreadyCompletedCard
+          careerName={targetCareerRel?.name_tr ?? null}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#F7F9FC]">

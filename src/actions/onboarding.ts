@@ -262,7 +262,7 @@ export async function saveOnboardingAssessment(rawPayload: OnboardingAssessmentI
       console.error("Roadmap generation error:", e);
     }
     revalidatePath("/dashboard");
-    return { success: true, redirect: "/dashboard" };
+    return { success: true, redirect: "/dashboard?welcome=1" };
   }
 
   return { success: true, assessmentId: assessment.id };

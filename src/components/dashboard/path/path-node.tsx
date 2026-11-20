@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, useReducedMotion } from "motion/react";
-import { Check, Award, Loader2 } from "lucide-react";
+import { Check, Award, Loader2, SkipForward } from "lucide-react";
 import { getResourceMeta } from "@/lib/path/task-meta";
 import type { TaskRow } from "@/types/database";
 
@@ -27,10 +27,13 @@ export function PathNode({
   const ResourceIcon = meta.Icon;
 
   const isCompleted = task.status === "completed";
+  const isSkipped = task.status === "skipped";
   const isInProgress = task.status === "in_progress";
 
   const statusText = isCompleted
     ? "Tamamlandı"
+    : isSkipped
+    ? "Atlandı"
     : isInProgress
     ? "Devam ediyor"
     : "Aktif";
@@ -45,7 +48,7 @@ export function PathNode({
       className="absolute -translate-x-1/2 -translate-y-1/2 z-10 group"
     >
       {/* Floating Callout Bubble ("BAŞLA" or "DEVAM EDİYOR") - Anchored above circle */}
-      {(isRecommended || isInProgress) && !isCompleted && (
+      {(isRecommended || isInProgress) && !isCompleted && !isSkipped && (
         <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 z-20 pointer-events-none">
           <motion.div
             initial={prefersReducedMotion ? false : { y: 0 }}
@@ -90,22 +93,30 @@ export function PathNode({
         )}
 
         {/* Subtle Pulse Halo for Recommended Pending Node */}
-        {isRecommended && !isInProgress && !isCompleted && !prefersReducedMotion && (
-          <motion.span
-            animate={{ scale: [1, 1.15, 1], opacity: [0.45, 0.08, 0.45] }}
-            transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
-            aria-hidden="true"
-            className="absolute -inset-2 rounded-full bg-[#2F5BFF]/25 pointer-events-none"
-          />
-        )}
+        {isRecommended &&
+          !isInProgress &&
+          !isCompleted &&
+          !isSkipped &&
+          !prefersReducedMotion && (
+            <motion.span
+              animate={{ scale: [1, 1.15, 1], opacity: [0.45, 0.08, 0.45] }}
+              transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
+              aria-hidden="true"
+              className="absolute -inset-2 rounded-full bg-[#2F5BFF]/25 pointer-events-none"
+            />
+          )}
 
         <button
           type="button"
           onClick={() => onSelect(task.id)}
-          aria-label={`Görev: ${task.title}, Tür: ${meta.label}, Ödül: ${task.xp_reward} XP, Durum: ${statusText}`}
+          aria-label={`Görev: ${task.title}, Tür: ${meta.label}, Ödül: ${
+            isSkipped ? 0 : task.xp_reward
+          } XP, Durum: ${statusText}`}
           className={`relative w-[4.5rem] h-[4.5rem] sm:w-20 sm:h-20 rounded-full flex items-center justify-center transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#2F5BFF]/40 active:translate-y-1 ${
             isCompleted
               ? "bg-gradient-to-b from-emerald-400 to-emerald-600 text-white border-4 border-emerald-200 shadow-[0_6px_0_#047857] hover:brightness-105 active:shadow-[0_2px_0_#047857]"
+              : isSkipped
+              ? "bg-slate-200 text-slate-600 border-4 border-slate-300 shadow-[0_6px_0_#94A3B8] hover:bg-slate-300/80 active:shadow-[0_2px_0_#94A3B8]"
               : isInProgress
               ? "bg-gradient-to-b from-[#2F5BFF] to-[#1D4ED8] text-white border-4 border-blue-200 shadow-[0_6px_0_#1E3A8A] hover:brightness-105 active:shadow-[0_2px_0_#1E3A8A]"
               : "bg-white text-[#2F5BFF] border-4 border-[#2F5BFF] shadow-[0_6px_0_#CBD5E1] hover:bg-blue-50/70 hover:scale-[1.03] active:shadow-[0_2px_0_#CBD5E1]"
@@ -119,6 +130,8 @@ export function PathNode({
 
           {isUpdating ? (
             <Loader2 className="w-7 h-7 animate-spin" />
+          ) : isSkipped ? (
+            <SkipForward className="w-7 h-7 sm:w-8 sm:h-8 stroke-[2.25]" />
           ) : (
             <ResourceIcon className="w-7 h-7 sm:w-8 sm:h-8 stroke-[2.25]" />
           )}
@@ -146,6 +159,8 @@ export function PathNode({
           className={`px-2.5 py-1 rounded-xl border backdrop-blur-xs shadow-2xs text-[11px] sm:text-xs font-extrabold leading-tight line-clamp-2 ${
             isCompleted
               ? "bg-emerald-50/95 border-emerald-200/90 text-emerald-950"
+              : isSkipped
+              ? "bg-slate-100/95 border-slate-200 text-slate-500 line-through"
               : "bg-white/95 border-slate-200/90 text-[#0B1F4D] group-hover:border-blue-300"
           }`}
         >
@@ -156,11 +171,22 @@ export function PathNode({
           className={`mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black border shadow-2xs ${
             isCompleted
               ? "bg-emerald-100/90 border-emerald-200 text-emerald-800"
+              : isSkipped
+              ? "bg-slate-100 border-slate-200 text-slate-600"
               : "bg-amber-50 border-amber-200/90 text-amber-800"
           }`}
         >
-          <Award className="w-3 h-3 text-amber-500" />
-          <span>+{task.xp_reward} XP</span>
+          {isSkipped ? (
+            <>
+              <SkipForward className="w-3 h-3 text-slate-500" />
+              <span>Atlandı • 0 XP</span>
+            </>
+          ) : (
+            <>
+              <Award className="w-3 h-3 text-amber-500" />
+              <span>+{task.xp_reward} XP</span>
+            </>
+          )}
         </span>
       </button>
     </div>
