@@ -10,6 +10,7 @@ import {
   type ResourceFormData,
 } from "@/lib/validation/admin-schemas";
 import { logAdminAction } from "@/lib/admin/audit";
+import { isInternalLeanResourceUrl } from "@/lib/path/task-reason";
 
 function isSafeExternalUrl(rawUrl: string): boolean {
   try {
@@ -377,7 +378,9 @@ export async function checkResourceLinksAction() {
         batch.map(async (res) => {
           let isOk = false;
 
-          if (isSafeExternalUrl(res.url)) {
+          if (isInternalLeanResourceUrl(res.url)) {
+            isOk = true;
+          } else if (isSafeExternalUrl(res.url)) {
             try {
               const response = await fetch(res.url, {
                 method: "HEAD",

@@ -48,6 +48,7 @@ interface DashboardContextValue {
   pendingTaskId: string | null;
   isAdvancingSprint: boolean;
   catalogExhausted: boolean;
+  allGapsClosed: boolean;
   lastAppendedSprintNumber: number | null;
   activeMiniCheckupSprintId: string | null;
   isSettingsOpen: boolean;
@@ -104,6 +105,7 @@ export function DashboardShell({
   const [isAdvancingSprint, startAdvanceTransition] = useTransition();
   const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
   const [catalogExhausted, setCatalogExhausted] = useState(false);
+  const [allGapsClosed, setAllGapsClosed] = useState(false);
   const [lastAppendedSprintNumber, setLastAppendedSprintNumber] = useState<
     number | null
   >(null);
@@ -360,6 +362,15 @@ export function DashboardShell({
           return;
         }
 
+        if (res.allGapsClosed) {
+          setAllGapsClosed(true);
+          toast.success(
+            "Tebrikler! Hedef mesleğindeki tüm yetkinlik açıklarını kapattın! 🏆"
+          );
+          resolve(true);
+          return;
+        }
+
         if (res.catalogExhausted) {
           setCatalogExhausted(true);
           toast.success(
@@ -395,6 +406,7 @@ export function DashboardShell({
         pendingTaskId,
         isAdvancingSprint,
         catalogExhausted,
+        allGapsClosed,
         lastAppendedSprintNumber,
         activeMiniCheckupSprintId,
         isSettingsOpen,

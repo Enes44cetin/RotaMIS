@@ -141,7 +141,10 @@ export function CheckupResultModal({
 
                 <p className="text-xs sm:text-sm text-blue-100/90 leading-relaxed">
                   <strong>{careerName}</strong> sektör beklentilerine göre mevcut
-                  konumunu analiz ettik ve ilk sprintini oluşturduk.
+                  konumunu analiz ettik
+                  {topGaps.length === 0
+                    ? " — tüm çekirdek hedefleri %100 karşılıyorsun!"
+                    : " ve ilk sprintini oluşturduk."}
                 </p>
 
                 {/* Reward Chips */}
@@ -286,8 +289,8 @@ export function CheckupResultModal({
                 ) : (
                   <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200/80 text-xs text-emerald-800 font-medium leading-relaxed">
                     Harika! Tüm çekirdek eksenlerde sektör hedefine ulaşmış
-                    görünüyorsun. İleri seviye pekiştirme görevlerin Sprint
-                    1&apos;de seni bekliyor.
+                    görünüyorsun. Bu kariyer alanında kapatman gereken bir
+                    yetkinlik açığın bulunmuyor.
                   </div>
                 )}
               </div>
@@ -301,7 +304,11 @@ export function CheckupResultModal({
                 className="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-[#2F5BFF] to-indigo-600 hover:brightness-105 text-white font-black text-sm shadow-[0_5px_0_#1736B5] active:translate-y-0.5 active:shadow-[0_2px_0_#1736B5] transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
                 <Rocket className="w-5 h-5" />
-                <span>Sprint 1 Hazır — İlk Göreve Başla →</span>
+                <span>
+                  {topGaps.length === 0
+                    ? "Harika! Kariyer Paneline Geç →"
+                    : "Sprint 1 Hazır — İlk Göreve Başla →"}
+                </span>
               </button>
             </div>
           </motion.div>

@@ -124,8 +124,23 @@ export function buildSprints(
     const posIndex = (sprintNumber - 1) % 4;
     const preset = CYCLE_STEP_PRESETS[posIndex];
 
+    const avgDifficulty =
+      sprintTasks.length > 0
+        ? sprintTasks.reduce((sum, t) => sum + (t.difficulty || 1), 0) /
+          sprintTasks.length
+        : 1;
+
+    const dynamicStandardSuffix =
+      avgDifficulty <= 1.35
+        ? "Temel Yetkinlik Adımları"
+        : avgDifficulty <= 2.35
+        ? "Uygulama & Sektör Pratiği"
+        : "İleri Seviye & Sektör Standardı";
+
     const titleSuffix =
-      cycleNumber === 1 ? preset.firstCycleSuffix : preset.laterCycleSuffix;
+      kind === "checkpoint"
+        ? preset.firstCycleSuffix
+        : dynamicStandardSuffix;
 
     const completedCount = sprintTasks.filter(
       (t) => t.status === "completed" || t.status === "skipped"

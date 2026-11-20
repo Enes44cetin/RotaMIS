@@ -3,6 +3,7 @@ import type {
   MatchedResourceItem,
   MatcherInput,
   MatcherOutput,
+  MatcherSkillGap,
   ResourceMatcher,
 } from "./types";
 import type { LearningStyle, TaskResourceType } from "@/types/database";
@@ -19,9 +20,12 @@ function matchesLearningStyle(
   resourceType: TaskResourceType
 ): boolean {
   if (!style || style === "mixed") return false;
-  if (style === "video") return resourceType === "video" || resourceType === "course";
-  if (style === "reading") return resourceType === "article" || resourceType === "course";
-  if (style === "hands_on") return resourceType === "practice" || resourceType === "project";
+  if (style === "video")
+    return resourceType === "video" || resourceType === "course";
+  if (style === "reading")
+    return resourceType === "article" || resourceType === "course";
+  if (style === "hands_on")
+    return resourceType === "practice" || resourceType === "project";
   return false;
 }
 
@@ -30,6 +34,50 @@ function idealDifficultyForSprint(sprintNumber: number): number {
   if (posInCycle === 1) return 1;
   if (posInCycle === 2 || posInCycle === 3) return 2;
   return 3;
+}
+
+/**
+ * Hem Kural Tabanlı (rule-v1) hem de Gemini AI eşleştiricisi için aday havuzunu
+ * öğrencinin GERÇEK beceri açıklarına (gap > 0) ve MEVCUT SEVİYESİNİN ÜSTÜNDEKİ
+ * (target_level > current_level) kademelere filtreler.
+ */
+export function filterEligibleCatalogForGaps(
+  catalogResources: CatalogResourceCandidate[],
+  skillGaps: MatcherSkillGap[],
+  usedResourceIds: Set<string>
+): CatalogResourceCandidate[] {
+  const activeGapBySkillId = new Map<string, MatcherSkillGap>();
+  for (const g of skillGaps) {
+    if (g.gap > 0) {
+      activeGapBySkillId.set(g.skill_id, g);
+    }
+  }
+
+  if (activeGapBySkillId.size === 0) {
+    return [];
+  }
+
+  const eligible: CatalogResourceCandidate[] = [];
+
+  for (const res of catalogResources) {
+    if (usedResourceIds.has(res.id)) continue;
+
+    const validLinks = (res.resource_skills || []).filter((link) => {
+      const gapInfo = activeGapBySkillId.get(link.skill_id);
+      if (!gapInfo) return false;
+      const effectiveCurrent = Math.max(1, gapInfo.current_level || 1);
+      return link.target_level > effectiveCurrent;
+    });
+
+    if (validLinks.length > 0) {
+      eligible.push({
+        ...res,
+        resource_skills: validLinks,
+      });
+    }
+  }
+
+  return eligible;
 }
 
 export class DeterministicRuleMatcher implements ResourceMatcher {
@@ -46,101 +94,115 @@ export class DeterministicRuleMatcher implements ResourceMatcher {
       learningStyle,
     } = input;
 
-    const targetCount = computeTargetTaskCount(weeklyHours);
-    const idealDiff = idealDifficultyForSprint(sprintNumber);
+    const activeGaps = skillGaps.filter((g) => g.gap > 0);
 
-    const unusedCatalog = catalogResources.filter(
-      (r) => !usedResourceIds.has(r.id)
-    );
-
-    if (unusedCatalog.length === 0) {
-      const openSkillIds = skillGaps
-        .filter((g) => g.gap > 0)
-        .slice(0, 3)
-        .map((g) => g.skill_id);
+    // Öğrencinin hiçbir beceri açığı yoksa (örn. tüm sorulara 5/5 verdiyse) 0 görev döndür!
+    if (activeGaps.length === 0) {
       return {
         matcherVersion: this.version,
         items: [],
         focusSkillIds: [],
-        exhaustedSkillIds: openSkillIds,
+        exhaustedSkillIds: [],
       };
     }
 
-    const gapBySkillId = new Map(skillGaps.map((g) => [g.skill_id, g]));
-    const activeGaps = skillGaps.filter((g) => g.gap > 0);
-    const exhaustedSkillIds: string[] = [];
+    const targetCount = computeTargetTaskCount(weeklyHours);
+    const idealDiff = idealDifficultyForSprint(sprintNumber);
 
-    // Katalog kapsam kontrolü: Açığı olan becerilerden hiç kullanılmamış kaynağı kalmayanları işaretle
+    const eligibleCatalog = filterEligibleCatalogForGaps(
+      catalogResources,
+      skillGaps,
+      usedResourceIds
+    );
+
+    const exhaustedSkillIds: string[] = [];
     for (const gap of activeGaps.slice(0, 4)) {
-      const hasAnyUnusedForSkill = unusedCatalog.some((r) =>
+      const hasAnyEligibleForSkill = eligibleCatalog.some((r) =>
         (r.resource_skills || []).some((rs) => rs.skill_id === gap.skill_id)
       );
-      if (!hasAnyUnusedForSkill) {
+      if (!hasAnyEligibleForSkill) {
         exhaustedSkillIds.push(gap.skill_id);
       }
     }
 
+    if (eligibleCatalog.length === 0) {
+      return {
+        matcherVersion: this.version,
+        items: [],
+        focusSkillIds: [],
+        exhaustedSkillIds,
+      };
+    }
+
+    const gapBySkillId = new Map(activeGaps.map((g) => [g.skill_id, g]));
     const selected: MatchedResourceItem[] = [];
     const chosenIds = new Set<string>();
     const sprintSkillCount = new Map<string, number>();
     const sprintTypeCount = new Map<TaskResourceType, number>();
 
-    // Adım 1: Sıkı seviye uyumu + açık önceliği ile puanlayarak seç
-    const pickPass = (relaxLevelFilter: boolean, allowZeroGapCareerSkills: boolean) => {
+    const pickPass = (relaxMinLevelFilter: boolean) => {
       while (selected.length < targetCount) {
         let bestCandidate: {
           resource: CatalogResourceCandidate;
-          skillId: string | null;
+          skillId: string;
           score: number;
           reason: string;
         } | null = null;
 
-        for (const res of unusedCatalog) {
+        for (const res of eligibleCatalog) {
           if (chosenIds.has(res.id)) continue;
 
           const links = res.resource_skills || [];
           let bestLinkSkillId: string | null = null;
           let bestSkillScore = -1;
-          let bestReason = "general_enrichment";
 
           for (const link of links) {
             const gapInfo = gapBySkillId.get(link.skill_id);
-            if (!gapInfo) continue;
+            if (!gapInfo || gapInfo.gap <= 0) continue;
 
-            if (!allowZeroGapCareerSkills && gapInfo.gap <= 0) continue;
+            const effectiveCurrent = Math.max(1, gapInfo.current_level || 1);
 
-            // Aynı sprintte tek beceriye en fazla 2 görev yığılsın
+            // Asla öğrencinin mevcut seviyesinin altında veya eşit tavanlı görev seçme!
+            if (link.target_level <= effectiveCurrent) continue;
+
+            // Aynı sprintte tek beceriye ilk turda en fazla 1, ikinci turda en fazla 2 görev ver
             const countInThisSprint = sprintSkillCount.get(link.skill_id) || 0;
-            if (countInThisSprint >= 2 && !relaxLevelFilter) continue;
+            if (!relaxMinLevelFilter && countInThisSprint >= 1) continue;
+            if (relaxMinLevelFilter && countInThisSprint >= 2) continue;
 
-            // Seviye uygunluğu (sıkı turda öğrenci seviyesinin çok üstündeki kaynağı ele)
-            const effectiveCurrent = Math.max(1, gapInfo.current_level);
-            if (!relaxLevelFilter && link.min_level > effectiveCurrent + 1) {
+            // Sıkı turda öğrencinin mevcut seviyesinin çok üstünden başlayan kademeyi beklet
+            if (!relaxMinLevelFilter && link.min_level > effectiveCurrent + 1) {
               continue;
             }
 
-            // Bu döngüde daha önce çok çalışılan becerinin ağırlığını hafifçe azalt ki patika çeşitlensin
             const priorCycleTasks = cycleSkillCounts.get(link.skill_id) || 0;
-            const cycleDampener = Math.max(0.45, 1 - priorCycleTasks * 0.2 + countInThisSprint * -0.25);
+            const cycleDampener = Math.max(
+              0.45,
+              1 - priorCycleTasks * 0.2 + countInThisSprint * -0.35
+            );
+
+            // Doğrudan öğrencinin mevcut seviyesini kapsayan sıradaki kademeye yüksek öncelik ver
+            const exactNextTierBonus =
+              link.min_level <= effectiveCurrent &&
+              link.target_level > effectiveCurrent
+                ? 8
+                : 0;
 
             const baseGapWeight =
-              gapInfo.gap > 0
-                ? gapInfo.gap * gapInfo.importance * 12 * cycleDampener
-                : gapInfo.importance * 4 * cycleDampener;
+              gapInfo.gap * gapInfo.importance * 12 * cycleDampener +
+              exactNextTierBonus;
 
             if (baseGapWeight > bestSkillScore) {
               bestSkillScore = baseGapWeight;
               bestLinkSkillId = link.skill_id;
-              bestReason = gapInfo.gap > 0 ? "skill_gap_match" : "career_reinforcement";
             }
           }
 
-          if (bestSkillScore < 0) continue;
+          if (bestSkillScore < 0 || !bestLinkSkillId) continue;
 
-          // Ek bonuslar: Öğrenme stili + Zorluk uyumu + Kaynak türü çeşitliliği
           let totalScore = bestSkillScore;
           if (matchesLearningStyle(learningStyle, res.resource_type)) {
-            totalScore += 5;
+            totalScore += 4;
           }
 
           const diffDelta = Math.abs((res.difficulty || 2) - idealDiff);
@@ -148,7 +210,7 @@ export class DeterministicRuleMatcher implements ResourceMatcher {
 
           const usedSameType = sprintTypeCount.get(res.resource_type) || 0;
           if (usedSameType === 0) {
-            totalScore += 3;
+            totalScore += 2;
           }
 
           if (!bestCandidate || totalScore > bestCandidate.score) {
@@ -156,7 +218,7 @@ export class DeterministicRuleMatcher implements ResourceMatcher {
               resource: res,
               skillId: bestLinkSkillId,
               score: totalScore,
-              reason: bestReason,
+              reason: "skill_gap_match",
             };
           }
         }
@@ -164,12 +226,10 @@ export class DeterministicRuleMatcher implements ResourceMatcher {
         if (!bestCandidate) break;
 
         chosenIds.add(bestCandidate.resource.id);
-        if (bestCandidate.skillId) {
-          sprintSkillCount.set(
-            bestCandidate.skillId,
-            (sprintSkillCount.get(bestCandidate.skillId) || 0) + 1
-          );
-        }
+        sprintSkillCount.set(
+          bestCandidate.skillId,
+          (sprintSkillCount.get(bestCandidate.skillId) || 0) + 1
+        );
         sprintTypeCount.set(
           bestCandidate.resource.resource_type,
           (sprintTypeCount.get(bestCandidate.resource.resource_type) || 0) + 1
@@ -183,33 +243,12 @@ export class DeterministicRuleMatcher implements ResourceMatcher {
       }
     };
 
-    // Tur 1: Açığı olan beceriler + uygun seviye
-    pickPass(false, false);
+    // Tur 1: Her açık beceriden sıradaki kademe
+    pickPass(false);
 
-    // Tur 2: Yeterli görev çıkmadıysa seviye filtresini gevşet
+    // Tur 2: Sprint kapasitesi dolmadıysa aynı açık becerinin bir üst kademesini de ekle
     if (selected.length < targetCount) {
-      pickPass(true, false);
-    }
-
-    // Tur 3: Hâlâ azsa kariyerdeki pekiştirme (gap = 0) becerilerini de dahil et
-    if (selected.length < Math.min(3, targetCount)) {
-      pickPass(true, true);
-    }
-
-    // Tur 4: Son çare — genel katalogdan kullanılmamış kaynaklarla en az 2-3 göreve tamamla
-    if (selected.length < Math.min(3, targetCount)) {
-      for (const res of unusedCatalog) {
-        if (selected.length >= Math.min(3, targetCount)) break;
-        if (chosenIds.has(res.id)) continue;
-
-        chosenIds.add(res.id);
-        const fallbackSkillId = res.resource_skills?.[0]?.skill_id || null;
-        selected.push({
-          resourceId: res.id,
-          skillId: fallbackSkillId,
-          reasonCode: "catalog_fallback",
-        });
-      }
+      pickPass(true);
     }
 
     const focusSkillIds = Array.from(
@@ -230,4 +269,3 @@ export class DeterministicRuleMatcher implements ResourceMatcher {
 }
 
 export const ruleMatcher = new DeterministicRuleMatcher();
-

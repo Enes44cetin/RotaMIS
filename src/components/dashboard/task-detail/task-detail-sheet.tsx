@@ -19,7 +19,10 @@ import {
   Compass,
 } from "lucide-react";
 import { getResourceMeta, getDifficultyLabel } from "@/lib/path/task-meta";
-import { buildTaskReason } from "@/lib/path/task-reason";
+import {
+  buildTaskReason,
+  isInternalLeanResourceUrl,
+} from "@/lib/path/task-reason";
 import { useDashboard } from "../dashboard-shell";
 import { XpBurst } from "./xp-burst";
 import type {
@@ -198,6 +201,10 @@ export function TaskDetailSheet({
               );
               const difficulty = Math.min(3, Math.max(1, task.difficulty || 1));
               const reasonSummary = buildTaskReason(task, skillGaps, careerName);
+              const hasExternalResourceUrl = Boolean(
+                task.resource_url &&
+                  !isInternalLeanResourceUrl(task.resource_url)
+              );
 
               return (
                 <>
@@ -342,8 +349,8 @@ export function TaskDetailSheet({
                       </p>
                     </div>
 
-                    {/* External Learning Resource Link */}
-                    {task.resource_url && (
+                    {/* External Learning Resource Link (yalnızca admin harici bir URL tanımladıysa gösterilir) */}
+                    {hasExternalResourceUrl && task.resource_url && (
                       <a
                         href={task.resource_url}
                         target="_blank"
@@ -542,7 +549,7 @@ export function TaskDetailSheet({
                               <span>Zaten Biliyorum / Atla</span>
                             </button>
 
-                            {task.resource_url && (
+                            {hasExternalResourceUrl && (
                               <button
                                 type="button"
                                 disabled={isUpdating}

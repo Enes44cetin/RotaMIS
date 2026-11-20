@@ -1,5 +1,36 @@
 import type { SkillGapRow, TaskRow } from "@/types/database";
 
+export const INTERNAL_LEAN_URL_PREFIX = "https://rotamis.local/skill/";
+
+/**
+ * Otomatik üretilen yalın yetkinlik görevi şablonlarının dahili URL'lerini tespit eder.
+ * Dahili URL'lerde dış kaynak kutusu ve kırık link bildirimi gizlenir.
+ */
+export function isInternalLeanResourceUrl(
+  url: string | null | undefined
+): boolean {
+  if (!url) return true;
+  const trimmed = url.trim();
+  if (!trimmed || trimmed.startsWith("#")) return true;
+  return trimmed.startsWith(INTERNAL_LEAN_URL_PREFIX);
+}
+
+/**
+ * Tüm açıklar kapandığında (veya açık kalmayıp son sprint mühürlendiğinde)
+ * son sprintin altında "Sprint N+1 Hazır" kapısının açık kalmasını önler.
+ */
+export function shouldKeepTailSprintGateOpen(
+  isTailSprint: boolean,
+  isSealed: boolean,
+  allGapsClosed: boolean,
+  hasZeroSkillGaps: boolean
+): boolean {
+  if (!isTailSprint) return false;
+  if (allGapsClosed) return false;
+  if (hasZeroSkillGaps && isSealed) return false;
+  return true;
+}
+
 export interface TaskReasonSummary {
   headline: string;
   detail: string;

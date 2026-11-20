@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { matchResourcesForNextSprint } from "@/lib/roadmap/matcher";
+import { filterEligibleCatalogForGaps } from "@/lib/roadmap/matcher/rule-matcher";
 import type {
   CatalogResourceCandidate,
   MatcherSkillGap,
@@ -25,6 +26,7 @@ export interface AdvanceSprintResult {
   sprintId?: string | null;
   sprintNumber?: number;
   catalogExhausted?: boolean;
+  allGapsClosed?: boolean;
 }
 
 /**
@@ -141,10 +143,42 @@ export async function createNextSprintForUser(
   const candidates =
     (catalogResources as unknown as CatalogResourceCandidate[]) || [];
 
+  const activeGaps = skillGaps.filter((g) => g.gap > 0);
+
+  // Öğrencinin seçtiği meslekte kapatılacak hiçbir beceri açığı yoksa (örn. hepsine 5/5 verdiyse)
+  // gereksiz başlangıç yol haritası veya sprint ÜRETME!
+  if (skillGaps.length > 0 && activeGaps.length === 0) {
+    if (activeSprint && activeSprint.kind === "standard") {
+      await adminClient
+        .from("sprints")
+        .update({
+          status: "completed",
+          completed_at: new Date().toISOString(),
+        })
+        .eq("id", activeSprint.id);
+    }
+
+    return {
+      ok: true,
+      allGapsClosed: true,
+      catalogExhausted: false,
+      sprintId: null,
+      sprintNumber: maxSprintNumber,
+    };
+  }
+
+  // Hem Gemini AI hem de Rule Matcher için aday havuzunu yalnızca öğrencinin gerçek açıklarına
+  // (gap > 0) ve mevcut seviyesinin üstündeki (target_level > current_level) kademelere daralt.
+  const eligibleCandidates = filterEligibleCatalogForGaps(
+    candidates,
+    skillGaps,
+    usedResourceIds
+  );
+
   const matchResult = await matchResourcesForNextSprint({
     sprintNumber: nextSprintNumber,
     skillGaps,
-    catalogResources: candidates,
+    catalogResources: eligibleCandidates,
     usedResourceIds,
     cycleSkillCounts,
     weeklyHours: latestAssess?.weekly_hours ?? null,

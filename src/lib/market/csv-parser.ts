@@ -1,4 +1,4 @@
-import { slugifyTr } from "@/lib/admin/slugify";
+import { slugifyTr } from "../admin/slugify.ts";
 import type { SkillCategory } from "@/types/database";
 
 export interface RawMarketCsvRow {
@@ -448,7 +448,7 @@ export function normalizeSliceForImport(
       importance,
       isRadarAxis,
       axisOrder,
-      isCoreCheckup: isRadarAxis || r.yuzde >= 18,
+      isCoreCheckup: true,
       promptTr,
     };
   });

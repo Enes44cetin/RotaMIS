@@ -6,11 +6,13 @@ import { Flame } from "lucide-react";
 import { useDashboard } from "../dashboard-shell";
 import { buildSprints } from "@/lib/path/build-sprints";
 import { partitionCycles } from "@/lib/path/cycle";
+import { shouldKeepTailSprintGateOpen } from "@/lib/path/task-reason";
 import { SprintSection } from "./sprint-section";
 import { CycleSummaryCard } from "./cycle-summary-card";
 import { NextSprintPreview } from "./next-sprint-preview";
 import { CatalogPendingNode } from "./catalog-pending-node";
 import { PathEmptyState } from "./path-empty-state";
+import { MasteryCompletedCard } from "./mastery-completed-card";
 import { TaskDetailSheet } from "../task-detail/task-detail-sheet";
 import { MiniCheckupSheet } from "../mini-checkup/mini-checkup-sheet";
 import { CheckupResultModal } from "../welcome/checkup-result-modal";
@@ -51,6 +53,7 @@ export function CareerPath({
     streakStatus,
     pendingTaskId,
     catalogExhausted,
+    allGapsClosed,
     lastAppendedSprintNumber,
     activeMiniCheckupSprintId,
     closeMiniCheckup,
@@ -182,6 +185,8 @@ export function CareerPath({
   }, [lastAppendedSprintNumber, prefersReducedMotion]);
 
   const tailSprint = sprints[sprints.length - 1];
+  const hasZeroSkillGaps =
+    skillGaps.length > 0 && skillGaps.every((g) => g.gap === 0);
 
   return (
     <div className="space-y-6">
@@ -206,7 +211,14 @@ export function CareerPath({
       )}
 
       {sprints.length === 0 ? (
-        <PathEmptyState />
+        hasZeroSkillGaps || allGapsClosed ? (
+          <MasteryCompletedCard
+            careerName={careerName}
+            overallReadiness={overallReadiness}
+          />
+        ) : (
+          <PathEmptyState />
+        )
       ) : (
         <div className="space-y-8">
           {/* Geçmişte Tamamlanmış 4'lü Döngüler (Katlanabilir Özet Kartları) */}
@@ -230,7 +242,12 @@ export function CareerPath({
                 )}
                 <SprintSection
                   sprint={sprint}
-                  isTailSprint={isTail}
+                  isTailSprint={shouldKeepTailSprintGateOpen(
+                    isTail,
+                    sprint.isSealed,
+                    allGapsClosed,
+                    hasZeroSkillGaps
+                  )}
                   isNewlyAppended={
                     sprint.sprintNumber === lastAppendedSprintNumber
                   }
@@ -242,8 +259,13 @@ export function CareerPath({
             );
           })}
 
-          {/* Alt Kısım: Katalog Tükendiyse Bekleme Kartı, Değilse Sıradaki Sprint Önizlemesi */}
-          {catalogExhausted ? (
+          {/* Alt Kısım: Tüm Açıklar Kapandıysa Mezuniyet Kartı, Katalog Tükendiyse Bekleme Kartı, Değilse Sıradaki Sprint Önizlemesi */}
+          {allGapsClosed || (hasZeroSkillGaps && tailSprint.isSealed) ? (
+            <MasteryCompletedCard
+              careerName={careerName}
+              overallReadiness={overallReadiness}
+            />
+          ) : catalogExhausted ? (
             <CatalogPendingNode />
           ) : (
             <NextSprintPreview nextSprintNumber={tailSprint.sprintNumber + 1} />
